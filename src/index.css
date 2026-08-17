@@ -1,0 +1,98 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 20% 4%;
+    --foreground: 0 0% 98%;
+    --card: 240 24% 6%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 24% 6%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 265 89% 66%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 16% 12%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 16% 12%;
+    --muted-foreground: 240 8% 65%;
+    --accent: 265 60% 20%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 16% 14%;
+    --input: 240 16% 14%;
+    --ring: 265 89% 66%;
+    --success: 142 71% 45%;
+    --warning: 38 92% 50%;
+    --radius: 0.75rem;
+
+    --chart-1: 265 89% 66%;
+    --chart-2: 200 80% 60%;
+    --chart-3: 142 71% 45%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 340 75% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+    min-height: 100vh;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .glow-primary {
+    box-shadow: 0 0 24px -4px hsl(265 89% 66% / 0.45);
+  }
+  .glow-primary-sm {
+    box-shadow: 0 0 14px -6px hsl(265 89% 66% / 0.5);
+  }
+  .text-glow {
+    text-shadow: 0 0 24px hsl(265 89% 66% / 0.45);
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .mask-fade-r {
+    -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%);
+    mask-image: linear-gradient(to right, black 85%, transparent 100%);
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(240 20% 4%);
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(240 16% 18%);
+  border-radius: 999px;
+  border: 2px solid hsl(240 20% 4%);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(265 60% 30%);
+}
