@@ -2,7 +2,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Home, BookOpen, Bookmark, Users, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
-import { useToast } from '@/hooks/use-toast';
 
 const bottomNavItems = [
   { label: 'Beranda', path: '/', icon: Home },
@@ -14,25 +13,14 @@ const bottomNavItems = [
 export function MobileNavbar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, profile, signOut } = useAuth();
-  const { toast } = useToast();
+  const { user, profile } = useAuth();
 
   const isActive = (path: string) =>
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
 
-  const handleSignOut = async () => {
-    await signOut();
-    toast({ title: 'Berhasil keluar', description: 'Sampai jumpa lagi!' });
-    navigate('/');
-  };
-
   const avatarUrl = profile?.avatar;
   const displayName = profile?.display_name || profile?.username || 'Pengguna';
   const initials = displayName.slice(0, 2).toUpperCase();
-
-  const profileItem = user
-    ? { label: 'Profil', path: `/profile/${profile?.username ?? ''}`, custom: true }
-    : { label: 'Profil', path: '/login', custom: false };
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-xl lg:hidden">

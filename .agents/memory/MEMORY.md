@@ -1,0 +1,1 @@
+- [Imported workflow ports](replit-import-workflow.md) — keep Vite imports on one consistent 5000 webview mapping.

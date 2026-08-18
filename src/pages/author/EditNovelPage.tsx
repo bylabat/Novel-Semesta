@@ -52,6 +52,7 @@ export default function EditNovelPage() {
 
   useEffect(() => {
     if (!user || !id) return;
+    const userId = user.id;
 
     let cancelled = false;
 
@@ -70,7 +71,7 @@ export default function EditNovelPage() {
             'id, title, description, cover, status, visibility'
           )
           .eq('id', id)
-          .eq('author_id', user.id)
+          .eq('author_id', userId)
           .maybeSingle(),
 
         supabase

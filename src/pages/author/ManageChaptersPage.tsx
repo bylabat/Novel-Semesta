@@ -45,6 +45,7 @@ export default function ManageChaptersPage() {
 
   useEffect(() => {
     if (!user || !novelId) return;
+    const userId = user.id;
 
     let cancelled = false;
 
@@ -56,7 +57,7 @@ export default function ManageChaptersPage() {
         .from('novels')
         .select('id, title, cover')
         .eq('id', novelId)
-        .eq('author_id', user.id)
+        .eq('author_id', userId)
         .maybeSingle();
 
       if (cancelled) return;
@@ -331,7 +332,7 @@ export default function ManageChaptersPage() {
                         variant="outline"
                         size="sm"
                         onClick={() =>
-                          navigate(`/author/manage-chapters/${novel.id}`)
+                          navigate(`/author/manage-chapters/${novelId}`)
                         }
                       >
                        <BookOpen size={15} className="mr-1.5" />

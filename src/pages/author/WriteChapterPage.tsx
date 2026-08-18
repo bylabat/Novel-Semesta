@@ -34,6 +34,7 @@ export default function WriteChapterPage() {
 
   useEffect(() => {
     if (!user) return;
+    const userId = user.id;
 
     let cancelled = false;
 
@@ -44,7 +45,7 @@ export default function WriteChapterPage() {
       const { data, error: fetchError } = await supabase
         .from('novels')
         .select('id, title')
-        .eq('author_id', user.id)
+        .eq('author_id', userId)
         .order('title', { ascending: true });
 
       if (cancelled) return;

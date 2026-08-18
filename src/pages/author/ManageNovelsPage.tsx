@@ -46,6 +46,7 @@ export default function ManageNovelsPage() {
 
   useEffect(() => {
     if (!user) return;
+    const userId = user.id;
 
     let cancelled = false;
 
@@ -72,7 +73,7 @@ export default function ManageNovelsPage() {
             )
           )
         `)
-        .eq('author_id', user.id)
+        .eq('author_id', userId)
         .order('updated_at', { ascending: false });
 
       if (cancelled) return;
@@ -82,7 +83,7 @@ export default function ManageNovelsPage() {
         setError(fetchError.message);
         setNovels([]);
       } else {
-        setNovels((data ?? []) as Novel[]);
+        setNovels((data ?? []) as unknown as Novel[]);
       }
 
       setLoading(false);

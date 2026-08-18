@@ -43,6 +43,7 @@ export default function EditChapterPage() {
 
   useEffect(() => {
     if (!user || !chapterId) return;
+    const userId = user.id;
 
     let cancelled = false;
 
@@ -79,7 +80,7 @@ export default function EditChapterPage() {
           .from('novels')
           .select('id, title')
           .eq('id', chapterData.novel_id)
-          .eq('author_id', user.id)
+          .eq('author_id', userId)
           .maybeSingle();
 
       if (cancelled) return;

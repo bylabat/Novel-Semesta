@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { BookOpen, Bookmark, Clock, Settings, Users, UserPlus, Loader2, Calendar } from 'lucide-react';
+import { BookOpen, Settings, Users, UserPlus, Loader2, Calendar } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
