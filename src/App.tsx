@@ -9,6 +9,7 @@ import HomePage from '@/pages/HomePage';
 import NovelPage from '@/pages/NovelPage';
 import NovelDetailPage from '@/pages/NovelDetailPage';
 import GenrePage from '@/pages/GenrePage';
+import GenreDetailPage from '@/pages/GenreDetailPage';
 import PopularPage from '@/pages/PopularPage';
 import LatestPage from '@/pages/LatestPage';
 import RankingPage from '@/pages/RankingPage';
@@ -28,6 +29,7 @@ import ManageChaptersPage from '@/pages/author/ManageChaptersPage';
 import EditChapterPage from '@/pages/author/EditChapterPage';
 import ReadChapterPage from '@/pages/ReadChapterPage';
 
+
 function App() {
   return (
     <BrowserRouter>
@@ -40,6 +42,7 @@ function App() {
               <Route path="/novel" element={<NovelPage />} />
               <Route path="/novel/:id" element={<NovelDetailPage />} />
               <Route path="/genre" element={<GenrePage />} />
+              <Route path="/genre/:id" element={<GenreDetailPage />} />
               <Route path="/populer" element={<PopularPage />} />
               <Route path="/terbaru" element={<LatestPage />} />
               <Route path="/ranking" element={<RankingPage />} />
