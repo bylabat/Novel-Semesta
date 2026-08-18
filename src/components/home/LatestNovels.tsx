@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Clock, ChevronRight, Loader2, Eye } from "lucide-react";
+import { Clock, Eye, ChevronRight, Loader2 } from 'lucide-react';
 import { Link } from "react-router-dom";
 
 import { supabase } from "@/lib/supabase";
@@ -22,6 +22,69 @@ interface Novel {
   author_id: string;
   profiles: Profile | Profile[] | null;
   genres: string[];
+}
+
+function formatRelativeTime(dateString: string) {
+  const date = new Date(dateString);
+  const now = new Date();
+
+  const diffInSeconds = Math.floor(
+    (now.getTime() - date.getTime()) / 1000,
+  );
+
+  if (diffInSeconds < 0) {
+    return 'Baru saja';
+  }
+
+  if (diffInSeconds < 60) {
+    return 'Baru saja';
+  }
+
+  const diffInMinutes = Math.floor(
+    diffInSeconds / 60,
+  );
+
+  if (diffInMinutes < 60) {
+    return `${diffInMinutes} menit lalu`;
+  }
+
+  const diffInHours = Math.floor(
+    diffInMinutes / 60,
+  );
+
+  if (diffInHours < 24) {
+    return `${diffInHours} jam lalu`;
+  }
+
+  const diffInDays = Math.floor(
+    diffInHours / 24,
+  );
+
+  if (diffInDays < 7) {
+    return `${diffInDays} hari lalu`;
+  }
+
+  const diffInWeeks = Math.floor(
+    diffInDays / 7,
+  );
+
+  if (diffInWeeks < 4) {
+    return `${diffInWeeks} minggu lalu`;
+  }
+
+  const diffInMonths = Math.floor(
+    diffInDays / 30,
+  );
+
+  if (diffInMonths < 12) {
+    return `${diffInMonths} bulan lalu`;
+  }
+
+  const diffInYears = Math.floor(
+    diffInDays / 365,
+  );
+
+  return `${diffInYears} tahun lalu`;
 }
 
 export function LatestNovels() {
@@ -236,7 +299,7 @@ export function LatestNovels() {
 
                     <span className="flex items-center gap-1">
                       <Clock size={12} />
-                      Diperbarui
+                      {formatRelativeTime(novel.updated_at)}
                     </span>
 
                     <ChevronRight
