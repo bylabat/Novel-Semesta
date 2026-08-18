@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   BookOpen,
@@ -8,12 +8,12 @@ import {
   ListOrdered,
   Loader2,
   Play,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { supabase } from '@/lib/supabase';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/components/EmptyState';
+import { supabase } from "@/lib/supabase";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/EmptyState";
 
 interface Novel {
   id: string;
@@ -26,6 +26,13 @@ interface Novel {
   views: number | null;
   created_at: string;
   updated_at: string;
+}
+
+interface Author {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+  avatar: string | null;
 }
 
 interface Genre {
@@ -55,17 +62,19 @@ export default function NovelDetailPage() {
   const { id } = useParams<{ id: string }>();
 
   const [novel, setNovel] = useState<Novel | null>(null);
+  const [author, setAuthor] = useState<Author | null>(null);
   const [genres, setGenres] = useState<Genre[]>([]);
   const [chapters, setChapters] = useState<Chapter[]>([]);
 
-  const [lastReadChapterId, setLastReadChapterId] =
-    useState<string | null>(null);
+  const [lastReadChapterId, setLastReadChapterId] = useState<string | null>(
+    null,
+  );
 
   const [isInLibrary, setIsInLibrary] = useState(false);
   const [libraryLoading, setLibraryLoading] = useState(false);
 
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   // ===========================================================
   // LOAD NOVEL
@@ -73,7 +82,7 @@ export default function NovelDetailPage() {
 
   useEffect(() => {
     if (!id) {
-      setError('ID novel tidak ditemukan.');
+      setError("ID novel tidak ditemukan.");
       setLoading(false);
       return;
     }
@@ -82,18 +91,17 @@ export default function NovelDetailPage() {
 
     async function loadNovel() {
       setLoading(true);
-      setError('');
+      setError("");
 
       try {
         // =====================================================
         // 1. AMBIL DATA NOVEL
         // =====================================================
 
-        const { data: novelData, error: novelError } =
-          await supabase
-            .from('novels')
-            .select(
-              `
+        const { data: novelData, error: novelError } = await supabase
+          .from("novels")
+          .select(
+            `
                 id,
                 title,
                 description,
@@ -104,18 +112,15 @@ export default function NovelDetailPage() {
                 views,
                 created_at,
                 updated_at
-              `
-            )
-            .eq('id', id)
-            .maybeSingle();
+              `,
+          )
+          .eq("id", id)
+          .maybeSingle();
 
         if (cancelled) return;
 
         if (novelError) {
-          console.error(
-            'Gagal mengambil novel:',
-            novelError
-          );
+          console.error("Gagal mengambil novel:", novelError);
 
           setError(novelError.message);
           setLoading(false);
@@ -128,47 +133,63 @@ export default function NovelDetailPage() {
           return;
         }
 
-        const currentNovel =
-          novelData as Novel;
+        const currentNovel = novelData as Novel;
 
         setNovel(currentNovel);
+
+        // =====================================================
+        // AMBIL PROFIL AUTHOR
+        // =====================================================
+
+        const { data: authorData, error: authorError } = await supabase
+          .from("profiles")
+          .select(
+            `
+            id,
+            username,
+            display_name,
+            avatar
+          `,
+          )
+          .eq("id", currentNovel.author_id)
+          .maybeSingle();
+
+        if (cancelled) return;
+
+        if (authorError) {
+          console.error("Gagal mengambil profil author:", authorError);
+
+          setAuthor(null);
+        } else {
+          setAuthor(authorData as Author | null);
+        }
 
         // =====================================================
         // 2. CEK USER DAN STATUS RAK
         // =====================================================
 
         const {
-          data: {
-            user,
-          },
+          data: { user },
         } = await supabase.auth.getUser();
 
         if (cancelled) return;
 
         if (user) {
-          const {
-            data: libraryData,
-            error: libraryError,
-          } = await supabase
-            .from('user_library')
-            .select('id')
-            .eq('user_id', user.id)
-            .eq('novel_id', id)
+          const { data: libraryData, error: libraryError } = await supabase
+            .from("user_library")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("novel_id", id)
             .maybeSingle();
 
           if (cancelled) return;
 
           if (libraryError) {
-            console.error(
-              'Gagal mengecek Rak:',
-              libraryError
-            );
+            console.error("Gagal mengecek Rak:", libraryError);
 
             setIsInLibrary(false);
           } else {
-            setIsInLibrary(
-              Boolean(libraryData)
-            );
+            setIsInLibrary(Boolean(libraryData));
           }
         } else {
           setIsInLibrary(false);
@@ -178,11 +199,8 @@ export default function NovelDetailPage() {
         // 3. AMBIL GENRE
         // =====================================================
 
-        const {
-          data: genreData,
-          error: genreError,
-        } = await supabase
-          .from('novel_genres')
+        const { data: genreData, error: genreError } = await supabase
+          .from("novel_genres")
           .select(
             `
               genre_id,
@@ -191,29 +209,22 @@ export default function NovelDetailPage() {
                 name,
                 slug
               )
-            `
+            `,
           )
-          .eq('novel_id', id);
+          .eq("novel_id", id);
 
         if (cancelled) return;
 
         if (genreError) {
-          console.error(
-            'Gagal mengambil genre:',
-            genreError
-          );
+          console.error("Gagal mengambil genre:", genreError);
 
           setGenres([]);
         } else {
-          const rows =
-            (genreData ?? []) as unknown as NovelGenreRow[];
+          const rows = (genreData ?? []) as unknown as NovelGenreRow[];
 
           const genreList = rows
             .map((row) => row.genres)
-            .filter(
-              (genre): genre is Genre =>
-                genre !== null
-            );
+            .filter((genre): genre is Genre => genre !== null);
 
           setGenres(genreList);
         }
@@ -222,11 +233,8 @@ export default function NovelDetailPage() {
         // 4. AMBIL CHAPTER YANG SUDAH DITERBITKAN
         // =====================================================
 
-        const {
-          data: chapterData,
-          error: chapterError,
-        } = await supabase
-          .from('chapters')
+        const { data: chapterData, error: chapterError } = await supabase
+          .from("chapters")
           .select(
             `
               id,
@@ -238,26 +246,22 @@ export default function NovelDetailPage() {
               word_count,
               created_at,
               updated_at
-            `
+            `,
           )
-          .eq('novel_id', id)
-          .eq('published', true)
-          .order('chapter_number', {
+          .eq("novel_id", id)
+          .eq("published", true)
+          .order("chapter_number", {
             ascending: false,
           });
 
         if (cancelled) return;
 
         if (chapterError) {
-          console.error(
-            'Gagal mengambil chapter:',
-            chapterError
-          );
+          console.error("Gagal mengambil chapter:", chapterError);
 
           setChapters([]);
         } else {
-          const chapterList =
-            (chapterData ?? []) as Chapter[];
+          const chapterList = (chapterData ?? []) as Chapter[];
 
           setChapters(chapterList);
 
@@ -265,22 +269,17 @@ export default function NovelDetailPage() {
           // CEK CHAPTER TERAKHIR YANG DIBACA
           // =================================================
 
-          const savedChapterId =
-            localStorage.getItem(
-              `last_read_chapter_${id}`
-            );
+          const savedChapterId = localStorage.getItem(
+            `last_read_chapter_${id}`,
+          );
 
           if (savedChapterId) {
-            const chapterExists =
-              chapterList.some(
-                (chapter) =>
-                  chapter.id === savedChapterId
-              );
+            const chapterExists = chapterList.some(
+              (chapter) => chapter.id === savedChapterId,
+            );
 
             if (chapterExists) {
-              setLastReadChapterId(
-                savedChapterId
-              );
+              setLastReadChapterId(savedChapterId);
             } else {
               setLastReadChapterId(null);
             }
@@ -291,16 +290,13 @@ export default function NovelDetailPage() {
 
         setLoading(false);
       } catch (err) {
-        console.error(
-          'Kesalahan:',
-          err
-        );
+        console.error("Kesalahan:", err);
 
         if (!cancelled) {
           setError(
             err instanceof Error
               ? err.message
-              : 'Terjadi kesalahan saat memuat novel.'
+              : "Terjadi kesalahan saat memuat novel.",
           );
 
           setLoading(false);
@@ -326,29 +322,20 @@ export default function NovelDetailPage() {
 
     try {
       const {
-        data: {
-          user,
-        },
+        data: { user },
         error: userError,
       } = await supabase.auth.getUser();
 
       if (userError) {
-        console.error(
-          'Gagal mendapatkan user:',
-          userError
-        );
+        console.error("Gagal mendapatkan user:", userError);
 
-        alert(
-          'Gagal memeriksa akun. Silakan coba lagi.'
-        );
+        alert("Gagal memeriksa akun. Silakan coba lagi.");
 
         return;
       }
 
       if (!user) {
-        alert(
-          'Silakan login terlebih dahulu untuk menambahkan novel ke Rak.'
-        );
+        alert("Silakan login terlebih dahulu untuk menambahkan novel ke Rak.");
 
         return;
       }
@@ -358,23 +345,16 @@ export default function NovelDetailPage() {
       // =====================================================
 
       if (isInLibrary) {
-        const {
-          error: deleteError,
-        } = await supabase
-          .from('user_library')
+        const { error: deleteError } = await supabase
+          .from("user_library")
           .delete()
-          .eq('user_id', user.id)
-          .eq('novel_id', novel.id);
+          .eq("user_id", user.id)
+          .eq("novel_id", novel.id);
 
         if (deleteError) {
-          console.error(
-            'Gagal menghapus dari Rak:',
-            deleteError
-          );
+          console.error("Gagal menghapus dari Rak:", deleteError);
 
-          alert(
-            'Gagal menghapus novel dari Rak.'
-          );
+          alert("Gagal menghapus novel dari Rak.");
 
           return;
         }
@@ -388,32 +368,23 @@ export default function NovelDetailPage() {
       // TAMBAH KE RAK
       // =====================================================
 
-      const {
-        error: insertError,
-      } = await supabase
-        .from('user_library')
+      const { error: insertError } = await supabase
+        .from("user_library")
         .insert({
           user_id: user.id,
           novel_id: novel.id,
         });
 
       if (insertError) {
-        console.error(
-          'Gagal menambahkan ke Rak:',
-          insertError
-        );
+        console.error("Gagal menambahkan ke Rak:", insertError);
 
         // Jika ternyata sudah ada
-        if (
-          insertError.code === '23505'
-        ) {
+        if (insertError.code === "23505") {
           setIsInLibrary(true);
           return;
         }
 
-        alert(
-          'Gagal menambahkan novel ke Rak.'
-        );
+        alert("Gagal menambahkan novel ke Rak.");
 
         return;
       }
@@ -432,11 +403,7 @@ export default function NovelDetailPage() {
     return (
       <div className="flex min-h-[500px] items-center justify-center">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2
-            size={24}
-            className="animate-spin text-primary"
-          />
-
+          <Loader2 size={24} className="animate-spin text-primary" />
           Memuat novel...
         </div>
       </div>
@@ -451,26 +418,16 @@ export default function NovelDetailPage() {
     return (
       <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
         <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-5">
-          <p className="font-medium text-destructive">
-            Gagal memuat novel
-          </p>
+          <p className="font-medium text-destructive">Gagal memuat novel</p>
 
           <p className="mt-2 break-words text-sm text-destructive/80">
             {error}
           </p>
         </div>
 
-        <Button
-          variant="outline"
-          className="mt-5"
-          asChild
-        >
+        <Button variant="outline" className="mt-5" asChild>
           <Link to="/novel">
-            <ArrowLeft
-              size={16}
-              className="mr-2"
-            />
-
+            <ArrowLeft size={16} className="mr-2" />
             Kembali ke Novel
           </Link>
         </Button>
@@ -489,13 +446,8 @@ export default function NovelDetailPage() {
         title="Novel tidak ditemukan"
         description="Novel yang kamu cari tidak ditemukan di database."
         action={
-          <Button
-            variant="outline"
-            asChild
-          >
-            <Link to="/novel">
-              Lihat semua novel
-            </Link>
+          <Button variant="outline" asChild>
+            <Link to="/novel">Lihat semua novel</Link>
           </Button>
         }
       />
@@ -507,29 +459,25 @@ export default function NovelDetailPage() {
   // ===========================================================
 
   const statusLabel =
-    novel.status === 'ongoing'
-      ? 'Ongoing'
-      : novel.status === 'completed'
-        ? 'Completed'
-        : novel.status === 'hiatus'
-          ? 'Hiatus'
-          : novel.status ||
-            'Belum ditentukan';
+    novel.status === "ongoing"
+      ? "Ongoing"
+      : novel.status === "completed"
+        ? "Completed"
+        : novel.status === "hiatus"
+          ? "Hiatus"
+          : novel.status || "Belum ditentukan";
 
   // ===========================================================
   // COVER
   // ===========================================================
 
-  const cover =
-    novel.cover ||
-    '/placeholder.svg';
+  const cover = novel.cover || "/placeholder.svg";
 
   // ===========================================================
   // VIEWS
   // ===========================================================
 
-  const views =
-    Number(novel.views ?? 0);
+  const views = Number(novel.views ?? 0);
 
   // ===========================================================
   // CHAPTER PERTAMA
@@ -543,13 +491,10 @@ export default function NovelDetailPage() {
   // ===========================================================
 
   const firstChapter =
-    chapters.length > 0
-      ? chapters[chapters.length - 1]
-      : null;
+    chapters.length > 0 ? chapters[chapters.length - 1] : null;
 
   return (
     <div className="pb-12">
-
       {/* =====================================================
           HERO BACKDROP
       ====================================================== */}
@@ -565,7 +510,6 @@ export default function NovelDetailPage() {
       </div>
 
       <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8">
-
         {/* ===================================================
             KEMBALI
         ==================================================== */}
@@ -575,7 +519,6 @@ export default function NovelDetailPage() {
           className="mt-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-primary"
         >
           <ArrowLeft size={16} />
-
           Kembali
         </Link>
 
@@ -584,7 +527,6 @@ export default function NovelDetailPage() {
         ==================================================== */}
 
         <div className="mt-4 flex flex-col gap-6 sm:flex-row">
-
           {/* COVER */}
 
           <div className="mx-auto w-40 shrink-0 overflow-hidden rounded-xl border border-border shadow-xl sm:mx-0 sm:w-48">
@@ -598,15 +540,12 @@ export default function NovelDetailPage() {
           {/* INFO */}
 
           <div className="flex-1 space-y-4">
-
             {/* STATUS */}
 
             <div className="flex flex-wrap gap-2">
-              <Badge variant="secondary">
-                {statusLabel}
-              </Badge>
+              <Badge variant="secondary">{statusLabel}</Badge>
 
-              {novel.visibility === 'public' && (
+              {novel.visibility === "public" && (
                 <Badge className="bg-primary text-primary-foreground">
                   Publik
                 </Badge>
@@ -622,7 +561,12 @@ export default function NovelDetailPage() {
             {/* AUTHOR */}
 
             <p className="text-sm text-muted-foreground">
-              Novel karya author
+              Novel karya{' '}
+              <span className="font-medium text-foreground">
+                {author?.display_name ||
+                  author?.username ||
+                  'Author'}
+              </span>
             </p>
 
             {/* GENRE */}
@@ -639,16 +583,13 @@ export default function NovelDetailPage() {
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground">
-                Belum ada genre.
-              </p>
+              <p className="text-xs text-muted-foreground">Belum ada genre.</p>
             )}
 
             {/* DESKRIPSI */}
 
             <p className="max-w-2xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground sm:text-base">
-              {novel.description ||
-                'Belum ada deskripsi untuk novel ini.'}
+              {novel.description || "Belum ada deskripsi untuk novel ini."}
             </p>
 
             {/* =================================================
@@ -656,19 +597,15 @@ export default function NovelDetailPage() {
             ================================================== */}
 
             <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-
               <span className="flex items-center gap-1.5">
                 <Eye size={16} />
-
-                {views.toLocaleString('id-ID')} dibaca
+                {views.toLocaleString("id-ID")} dibaca
               </span>
 
               <span className="flex items-center gap-1.5">
                 <ListOrdered size={16} />
-
                 {chapters.length} chapter
               </span>
-
             </div>
 
             {/* =================================================
@@ -676,36 +613,18 @@ export default function NovelDetailPage() {
             ================================================== */}
 
             <div className="flex flex-wrap gap-3 pt-2">
-
               {/* BACA SEKARANG */}
 
               {firstChapter ? (
-                <Button
-                  size="lg"
-                  className="glow-primary"
-                  asChild
-                >
-                  <Link
-                    to={`/read/${firstChapter.id}`}
-                  >
-                    <Play
-                      size={18}
-                      className="mr-1 fill-white"
-                    />
-
+                <Button size="lg" className="glow-primary" asChild>
+                  <Link to={`/read/${firstChapter.id}`}>
+                    <Play size={18} className="mr-1 fill-white" />
                     Baca Sekarang
                   </Link>
                 </Button>
               ) : (
-                <Button
-                  size="lg"
-                  disabled
-                >
-                  <Play
-                    size={18}
-                    className="mr-1"
-                  />
-
+                <Button size="lg" disabled>
+                  <Play size={18} className="mr-1" />
                   Belum Ada Chapter
                 </Button>
               )}
@@ -713,19 +632,9 @@ export default function NovelDetailPage() {
               {/* LANJUTKAN MEMBACA */}
 
               {lastReadChapterId && (
-                <Button
-                  size="lg"
-                  variant="outline"
-                  asChild
-                >
-                  <Link
-                    to={`/read/${lastReadChapterId}`}
-                  >
-                    <BookOpen
-                      size={18}
-                      className="mr-2"
-                    />
-
+                <Button size="lg" variant="outline" asChild>
+                  <Link to={`/read/${lastReadChapterId}`}>
+                    <BookOpen size={18} className="mr-2" />
                     Lanjutkan Membaca
                   </Link>
                 </Button>
@@ -743,20 +652,15 @@ export default function NovelDetailPage() {
               >
                 <Bookmark
                   size={18}
-                  className={`mr-2 ${
-                    isInLibrary
-                      ? 'fill-current'
-                      : ''
-                  }`}
+                  className={`mr-2 ${isInLibrary ? "fill-current" : ""}`}
                 />
 
                 {libraryLoading
-                  ? 'Memproses...'
+                  ? "Memproses..."
                   : isInLibrary
-                    ? 'Hapus dari Rak'
-                    : 'Tambah ke Rak'}
+                    ? "Hapus dari Rak"
+                    : "Tambah ke Rak"}
               </Button>
-
             </div>
           </div>
         </div>
@@ -766,9 +670,7 @@ export default function NovelDetailPage() {
         ==================================================== */}
 
         <div className="mt-10 rounded-xl border border-border bg-card p-5">
-
           <div className="flex items-center justify-between">
-
             <div>
               <h2 className="font-display text-lg font-semibold text-foreground">
                 Daftar Chapter
@@ -779,48 +681,34 @@ export default function NovelDetailPage() {
               </p>
             </div>
 
-            <BookOpen
-              size={20}
-              className="text-primary"
-            />
-
+            <BookOpen size={20} className="text-primary" />
           </div>
 
           {/* BELUM ADA CHAPTER */}
 
           {chapters.length === 0 ? (
             <div className="py-12 text-center">
-
-              <BookOpen
-                size={32}
-                className="mx-auto text-muted-foreground"
-              />
+              <BookOpen size={32} className="mx-auto text-muted-foreground" />
 
               <p className="mt-3 font-medium text-foreground">
                 Belum ada chapter
               </p>
 
               <p className="mt-1 text-sm text-muted-foreground">
-                Author belum menerbitkan chapter untuk
-                novel ini.
+                Author belum menerbitkan chapter untuk novel ini.
               </p>
-
             </div>
           ) : (
-
             /* ADA CHAPTER */
 
             <div className="mt-5 space-y-2">
-
               {chapters.map((chapter) => (
                 <Link
                   key={chapter.id}
                   to={`/read/${chapter.id}`}
                   className="group flex items-center justify-between rounded-lg border border-border/50 bg-secondary/30 px-4 py-3 transition-colors hover:border-primary/30 hover:bg-secondary/50"
                 >
-
                   <div className="min-w-0">
-
                     <p className="text-sm font-medium text-foreground group-hover:text-primary">
                       Chapter {chapter.chapter_number}
                     </p>
@@ -828,15 +716,11 @@ export default function NovelDetailPage() {
                     <p className="mt-0.5 truncate text-xs text-muted-foreground">
                       {chapter.title}
                     </p>
-
                   </div>
 
                   <div className="ml-4 flex shrink-0 items-center gap-3">
-
                     <span className="hidden text-xs text-muted-foreground sm:block">
-                      {Number(
-                        chapter.word_count ?? 0
-                      ).toLocaleString('id-ID')}{' '}
+                      {Number(chapter.word_count ?? 0).toLocaleString("id-ID")}{" "}
                       kata
                     </span>
 
@@ -844,15 +728,11 @@ export default function NovelDetailPage() {
                       size={15}
                       className="text-muted-foreground transition-colors group-hover:text-primary"
                     />
-
                   </div>
-
                 </Link>
               ))}
-
             </div>
           )}
-
         </div>
       </div>
     </div>
