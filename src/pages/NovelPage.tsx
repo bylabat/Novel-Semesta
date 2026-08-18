@@ -10,7 +10,12 @@ import { SearchBar } from '@/components/SearchBar';
 import { EmptyState } from '@/components/EmptyState';
 import { Button } from '@/components/ui/button';
 
-const statusFilters = ['Semua', 'Ongoing', 'Completed', 'Hiatus'] as const;
+const statusFilters = [
+  'Semua',
+  'Ongoing',
+  'Completed',
+  'Hiatus',
+] as const;
 
 type StatusFilter = (typeof statusFilters)[number];
 
@@ -22,6 +27,23 @@ interface SupabaseNovel {
   status: string | null;
   views: number | null;
   created_at: string;
+  author_id: string;
+}
+
+interface Author {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+}
+
+interface RatingRow {
+  novel_id: string;
+  rating: number;
+}
+
+interface RatingSummary {
+  average: number;
+  count: number;
 }
 
 export default function NovelPage() {
@@ -48,7 +70,14 @@ export default function NovelPage() {
       setError('');
 
       try {
-        const { data, error: novelsError } = await supabase
+        // =====================================================
+        // 1. AMBIL NOVEL
+        // =====================================================
+
+        const {
+          data: novelData,
+          error: novelsError,
+        } = await supabase
           .from('novels')
           .select(`
             id,
@@ -57,8 +86,10 @@ export default function NovelPage() {
             cover,
             status,
             views,
-            created_at
+            created_at,
+            author_id
           `)
+          .eq('visibility', 'public')
           .order('created_at', {
             ascending: false,
           });
@@ -77,7 +108,153 @@ export default function NovelPage() {
           return;
         }
 
-        const rows = (data ?? []) as SupabaseNovel[];
+        const rows = (novelData ?? []) as SupabaseNovel[];
+
+        // Jika tidak ada novel
+        if (rows.length === 0) {
+          setNovels([]);
+          setLoading(false);
+          return;
+        }
+
+        // =====================================================
+        // 2. AMBIL AUTHOR
+        // =====================================================
+
+        const authorIds = [
+          ...new Set(
+            rows
+              .map((novel) => novel.author_id)
+              .filter(Boolean)
+          ),
+        ];
+
+        const authorMap = new Map<string, Author>();
+
+        if (authorIds.length > 0) {
+          const {
+            data: authorData,
+            error: authorError,
+          } = await supabase
+            .from('profiles')
+            .select(`
+              id,
+              username,
+              display_name
+            `)
+            .in('id', authorIds);
+
+          if (cancelled) return;
+
+          if (authorError) {
+            console.error(
+              'Gagal mengambil data author:',
+              authorError
+            );
+          } else {
+            const authors = (authorData ?? []) as Author[];
+
+            authors.forEach((author) => {
+              authorMap.set(author.id, author);
+            });
+          }
+        }
+
+        // =====================================================
+        // 3. AMBIL RATING
+        // =====================================================
+
+        const novelIds = rows.map((novel) => novel.id);
+
+        const {
+          data: ratingData,
+          error: ratingError,
+        } = await supabase
+          .from('ratings')
+          .select(`
+            novel_id,
+            rating
+          `)
+          .in('novel_id', novelIds);
+
+        if (cancelled) return;
+
+        const ratingMap = new Map<string, RatingSummary>();
+
+        if (ratingError) {
+          console.error(
+            'Gagal mengambil rating:',
+            ratingError
+          );
+        } else {
+          const ratings = (ratingData ?? []) as RatingRow[];
+
+          ratings.forEach((rating) => {
+            const current = ratingMap.get(rating.novel_id);
+
+            if (!current) {
+              ratingMap.set(rating.novel_id, {
+                average: Number(rating.rating),
+                count: 1,
+              });
+            } else {
+              const newCount = current.count + 1;
+
+              ratingMap.set(rating.novel_id, {
+                average:
+                  (
+                    current.average * current.count +
+                    Number(rating.rating)
+                  ) / newCount,
+                count: newCount,
+              });
+            }
+          });
+        }
+
+        // =====================================================
+        // 4. AMBIL JUMLAH CHAPTER
+        // =====================================================
+
+        const {
+          data: chapterData,
+          error: chapterError,
+        } = await supabase
+          .from('chapters')
+          .select(`
+            novel_id
+          `)
+          .in('novel_id', novelIds)
+          .eq('published', true);
+
+        if (cancelled) return;
+
+        const chapterCountMap = new Map<string, number>();
+
+        if (chapterError) {
+          console.error(
+            'Gagal mengambil jumlah chapter:',
+            chapterError
+          );
+        } else {
+          const chapters = (chapterData ?? []) as {
+            novel_id: string;
+          }[];
+
+          chapters.forEach((chapter) => {
+            const current =
+              chapterCountMap.get(chapter.novel_id) ?? 0;
+
+            chapterCountMap.set(
+              chapter.novel_id,
+              current + 1
+            );
+          });
+        }
+
+        // =====================================================
+        // 5. BUAT DATA UNTUK NOVEL CARD
+        // =====================================================
 
         const mappedNovels: Novel[] = rows.map((novel) => {
           const normalizedStatus =
@@ -87,24 +264,55 @@ export default function NovelPage() {
                 ? 'Hiatus'
                 : 'Ongoing';
 
+          const author = authorMap.get(novel.author_id);
+
+          const rating = ratingMap.get(novel.id);
+
+          const chapterCount =
+            chapterCountMap.get(novel.id) ?? 0;
+
           return {
             id: novel.id,
             title: novel.title,
-            author: 'Author',
-            cover: novel.cover || '/placeholder.svg',
+
+            author:
+              author?.display_name ||
+              author?.username ||
+              'Author',
+
+            cover:
+              novel.cover ||
+              '/placeholder.svg',
+
             genres: [],
-            rating: 0,
-            ratingCount: 0,
-            views: Number(novel.views ?? 0).toLocaleString('id-ID'),
+
+            rating:
+              rating?.average ?? 0,
+
+            ratingCount:
+              rating?.count ?? 0,
+
+            views:
+              Number(
+                novel.views ?? 0
+              ).toLocaleString('id-ID'),
+
             status: normalizedStatus,
-            chapterCount: 0,
+
+            chapterCount,
+
             latestChapter: '',
+
             description:
-              novel.description || 'Belum ada deskripsi.',
+              novel.description ||
+              'Belum ada deskripsi.',
+
             isNew: false,
             isHot: false,
           };
         });
+
+        if (cancelled) return;
 
         setNovels(mappedNovels);
         setLoading(false);
@@ -134,15 +342,21 @@ export default function NovelPage() {
     };
   }, []);
 
+  // ===========================================================
+  // SEARCH + FILTER
+  // ===========================================================
+
   const filtered = novels.filter((novel) => {
+    const searchText = search.toLowerCase().trim();
+
     const matchSearch =
-      !search ||
+      !searchText ||
       novel.title
         .toLowerCase()
-        .includes(search.toLowerCase()) ||
+        .includes(searchText) ||
       novel.author
         .toLowerCase()
-        .includes(search.toLowerCase());
+        .includes(searchText);
 
     const matchStatus =
       status === 'Semua' ||
@@ -150,6 +364,10 @@ export default function NovelPage() {
 
     return matchSearch && matchStatus;
   });
+
+  // ===========================================================
+  // LOADING
+  // ===========================================================
 
   if (loading) {
     return (
@@ -160,6 +378,10 @@ export default function NovelPage() {
       </div>
     );
   }
+
+  // ===========================================================
+  // ERROR
+  // ===========================================================
 
   if (error) {
     return (
@@ -177,8 +399,16 @@ export default function NovelPage() {
     );
   }
 
+  // ===========================================================
+  // HALAMAN
+  // ===========================================================
+
   return (
     <div className="mx-auto max-w-[1440px] px-4 py-8 sm:px-6 lg:px-8">
+      {/* =====================================================
+          HEADER
+      ====================================================== */}
+
       <div className="mb-8 space-y-4">
         <div className="flex items-center gap-3">
           <div className="h-8 w-1 rounded-full bg-primary glow-primary-sm" />
@@ -187,6 +417,10 @@ export default function NovelPage() {
             Jelajahi Novel
           </h1>
         </div>
+
+        {/* ===================================================
+            SEARCH + FILTER
+        ==================================================== */}
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="flex-1">
@@ -203,20 +437,28 @@ export default function NovelPage() {
               className="shrink-0 text-muted-foreground"
             />
 
-            {statusFilters.map((s) => (
+            {statusFilters.map((filter) => (
               <Button
-                key={s}
-                variant={status === s ? 'default' : 'outline'}
+                key={filter}
+                variant={
+                  status === filter
+                    ? 'default'
+                    : 'outline'
+                }
                 size="sm"
                 className="shrink-0"
-                onClick={() => setStatus(s)}
+                onClick={() => setStatus(filter)}
               >
-                {s}
+                {filter}
               </Button>
             ))}
           </div>
         </div>
       </div>
+
+      {/* =====================================================
+          HASIL
+      ====================================================== */}
 
       {filtered.length > 0 ? (
         <>

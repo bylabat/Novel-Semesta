@@ -393,112 +393,137 @@ export default function NovelDetailPage() {
     };
   }, [id]);
 
-  // ===========================================================
-  // SIMPAN / UPDATE RATING
-  // ===========================================================
+  
+    // ===========================================================
+    // SIMPAN / UPDATE RATING
+    // ===========================================================
 
-  async function submitRating(value: number) {
-    if (!novel) return;
+    async function submitRating(value: number) {
+      if (!novel) return;
 
-    if (value < 1 || value > 5) return;
+      if (value < 1 || value > 5) return;
 
-    setRatingLoading(true);
+      setRatingLoading(true);
 
-    try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+      try {
+        // =====================================================
+        // CEK USER
+        // =====================================================
 
-      if (userError) {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError) {
+          console.error(
+            "Gagal mendapatkan user:",
+            userError,
+          );
+
+          alert("Gagal memeriksa akun. Silakan coba lagi.");
+
+          return;
+        }
+
+        if (!user) {
+          alert(
+            "Silakan login terlebih dahulu untuk memberikan rating.",
+          );
+
+          return;
+        }
+
+        // =====================================================
+        // INSERT / UPDATE RATING
+        // =====================================================
+
+        const { error: ratingError } = await supabase
+          .from("ratings")
+          .upsert(
+            {
+              novel_id: novel.id,
+              user_id: user.id,
+              rating: value,
+            },
+            {
+              onConflict: "user_id,novel_id",
+            },
+          );
+
+        if (ratingError) {
+          console.error(
+            "Gagal menyimpan rating:",
+            ratingError,
+          );
+
+          alert(
+            `Gagal menyimpan rating: ${ratingError.message}`,
+          );
+
+          return;
+        }
+
+        // =====================================================
+        // UPDATE RATING USER
+        // =====================================================
+
+        setUserRating(value);
+
+        // =====================================================
+        // HITUNG ULANG RATING NOVEL
+        // =====================================================
+
+        const {
+          data: ratingData,
+          error: ratingReloadError,
+        } = await supabase
+          .from("ratings")
+          .select("rating")
+          .eq("novel_id", novel.id);
+
+        if (ratingReloadError) {
+          console.error(
+            "Gagal memperbarui ringkasan rating:",
+            ratingReloadError,
+          );
+
+          return;
+        }
+
+        const ratings =
+          (ratingData ?? []) as { rating: number }[];
+
+        const count = ratings.length;
+
+        const average =
+          count > 0
+            ? ratings.reduce(
+                (sum, item) =>
+                  sum + Number(item.rating),
+                0,
+              ) / count
+            : 0;
+
+        setRatingSummary({
+          average,
+          count,
+        });
+      } catch (err) {
         console.error(
-          "Gagal mendapatkan user:",
-          userError,
+          "Kesalahan saat menyimpan rating:",
+          err,
         );
 
-        alert("Gagal memeriksa akun. Silakan coba lagi.");
-        return;
-      }
-
-      if (!user) {
         alert(
-          "Silakan login terlebih dahulu untuk memberikan rating.",
+          err instanceof Error
+            ? err.message
+            : "Terjadi kesalahan saat menyimpan rating.",
         );
-        return;
+      } finally {
+        setRatingLoading(false);
       }
-
-      const { error: ratingError } = await supabase
-        .from("ratings")
-        .upsert(
-          {
-            novel_id: novel.id,
-            user_id: user.id,
-            rating: value,
-          },
-          {
-            onConflict: "user_id,novel_id",
-          },
-        );
-
-      if (ratingError) {
-        console.error(
-          "Gagal menyimpan rating:",
-          ratingError,
-        );
-
-        alert(
-          `Gagal menyimpan rating: ${ratingError.message}`,
-        );
-
-        return;
-      }
-
-      // Rating user berhasil disimpan
-      setUserRating(value);
-
-      // =====================================================
-      // HITUNG ULANG RATING NOVEL
-      // =====================================================
-
-      const {
-        data: ratingData,
-        error: ratingReloadError,
-      } = await supabase
-        .from("ratings")
-        .select("rating")
-        .eq("novel_id", novel.id);
-
-      if (ratingReloadError) {
-        console.error(
-          "Gagal memperbarui ringkasan rating:",
-          ratingReloadError,
-        );
-
-        return;
-      }
-
-      const ratings =
-        (ratingData ?? []) as { rating: number }[];
-
-      const count = ratings.length;
-
-      const average =
-        count > 0
-          ? ratings.reduce(
-              (sum, item) => sum + Number(item.rating),
-              0,
-            ) / count
-          : 0;
-
-      setRatingSummary({
-        average,
-        count,
-      });
-    } finally {
-      setRatingLoading(false);
     }
-  }
-
   // ===========================================================
   // TAMBAH / HAPUS RAK
   // ===========================================================
