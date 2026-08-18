@@ -5,9 +5,20 @@ import { supabase } from '@/lib/supabase';
 import { NovelCard } from '@/components/NovelCard';
 import { SectionHeader } from '@/components/SectionHeader';
 
-interface Profile {
+interface Author {
+  id: string;
   username: string | null;
   display_name: string | null;
+}
+
+interface RatingRow {
+  novel_id: string;
+  rating: number;
+}
+
+interface RatingSummary {
+  average: number;
+  count: number;
 }
 
 interface Novel {
@@ -17,13 +28,24 @@ interface Novel {
   status: string;
   views: number | null;
   author_id: string;
-  profiles: Profile | Profile[] | null;
-  genres: string[];
 }
 
 export function PopularNovels() {
-  const [novels, setNovels] = useState<Novel[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [novels, setNovels] =
+    useState<Novel[]>([]);
+
+  const [authorMap, setAuthorMap] =
+    useState<Map<string, Author>>(
+      new Map(),
+    );
+
+  const [ratingMap, setRatingMap] =
+    useState<Map<string, RatingSummary>>(
+      new Map(),
+    );
+
+  const [loading, setLoading] =
+    useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,25 +54,29 @@ export function PopularNovels() {
       setLoading(true);
 
       try {
-        // ==========================================
+        // =====================================================
         // 1. AMBIL NOVEL POPULER
-        // ==========================================
+        // =====================================================
 
-        const { data, error } = await supabase
+        const {
+          data,
+          error,
+        } = await supabase
           .from('novels')
-          .select(`
-            id,
-            title,
-            cover,
-            status,
-            views,
-            author_id,
-            profiles:author_id (
-              username,
-              display_name
-            )
-          `)
-          .eq('visibility', 'public')
+          .select(
+            `
+              id,
+              title,
+              cover,
+              status,
+              views,
+              author_id
+            `,
+          )
+          .eq(
+            'visibility',
+            'public',
+          )
           .order('views', {
             ascending: false,
             nullsFirst: false,
@@ -70,84 +96,171 @@ export function PopularNovels() {
           return;
         }
 
-        const novelData = data ?? [];
+        const rows =
+          (data ?? []) as Novel[];
 
-        // ==========================================
-        // 2. JIKA TIDAK ADA NOVEL
-        // ==========================================
-
-        if (novelData.length === 0) {
+        if (rows.length === 0) {
           setNovels([]);
           setLoading(false);
           return;
         }
 
-        // ==========================================
-        // 3. AMBIL ID NOVEL
-        // ==========================================
+        // =====================================================
+        // 2. AMBIL AUTHOR
+        // =====================================================
 
-        const novelIds = novelData.map(
-          (novel) => novel.id,
-        );
+        const authorIds = [
+          ...new Set(
+            rows
+              .map(
+                (novel) =>
+                  novel.author_id,
+              )
+              .filter(Boolean),
+          ),
+        ];
 
-        // ==========================================
-        // 4. AMBIL RELASI GENRE
-        // ==========================================
+        const newAuthorMap =
+          new Map<string, Author>();
+
+        if (
+          authorIds.length > 0
+        ) {
+          const {
+            data: authorData,
+            error: authorError,
+          } = await supabase
+            .from('profiles')
+            .select(
+              `
+                id,
+                username,
+                display_name
+              `,
+            )
+            .in(
+              'id',
+              authorIds,
+            );
+
+          if (cancelled) return;
+
+          if (authorError) {
+            console.error(
+              'Gagal mengambil author:',
+              authorError,
+            );
+          } else {
+            const authors =
+              (authorData ??
+                []) as Author[];
+
+            authors.forEach(
+              (author) => {
+                newAuthorMap.set(
+                  author.id,
+                  author,
+                );
+              },
+            );
+          }
+        }
+
+        // =====================================================
+        // 3. AMBIL RATING
+        // =====================================================
+
+        const novelIds =
+          rows.map(
+            (novel) => novel.id,
+          );
 
         const {
-          data: genreRelations,
-          error: genreError,
+          data: ratingData,
+          error: ratingError,
         } = await supabase
-          .from('novel_genres')
-          .select(`
-            novel_id,
-            genres (
-              name
-            )
-          `)
-          .in('novel_id', novelIds);
+          .from('ratings')
+          .select(
+            `
+              novel_id,
+              rating
+            `,
+          )
+          .in(
+            'novel_id',
+            novelIds,
+          );
 
         if (cancelled) return;
 
-        if (genreError) {
+        const newRatingMap =
+          new Map<
+            string,
+            RatingSummary
+          >();
+
+        if (ratingError) {
           console.error(
-            'Gagal mengambil genre novel populer:',
-            genreError,
+            'Gagal mengambil rating:',
+            ratingError,
+          );
+        } else {
+          const ratings =
+            (ratingData ??
+              []) as RatingRow[];
+
+          ratings.forEach(
+            (rating) => {
+              const current =
+                newRatingMap.get(
+                  rating.novel_id,
+                );
+
+              if (!current) {
+                newRatingMap.set(
+                  rating.novel_id,
+                  {
+                    average:
+                      Number(
+                        rating.rating,
+                      ),
+                    count: 1,
+                  },
+                );
+              } else {
+                const newCount =
+                  current.count + 1;
+
+                newRatingMap.set(
+                  rating.novel_id,
+                  {
+                    average:
+                      (
+                        current.average *
+                          current.count +
+                        Number(
+                          rating.rating,
+                        )
+                      ) /
+                      newCount,
+                    count:
+                      newCount,
+                  },
+                );
+              }
+            },
           );
         }
 
-        // ==========================================
-        // 5. GABUNGKAN GENRE KE NOVEL
-        // ==========================================
+        if (cancelled) return;
 
-        const formattedNovels: Novel[] =
-          novelData.map((novel) => {
-            const genres =
-              (genreRelations ?? [])
-                .filter(
-                  (relation) =>
-                    relation.novel_id === novel.id,
-                )
-                .map((relation) => {
-                  const genre = Array.isArray(
-                    relation.genres,
-                  )
-                    ? relation.genres[0]
-                    : relation.genres;
-
-                  return genre?.name ?? '';
-                })
-                .filter(Boolean);
-
-            return {
-              ...novel,
-              views: novel.views ?? 0,
-              genres,
-            } as Novel;
-          });
-
-        setNovels(formattedNovels);
-        setLoading(false);
+        setNovels(rows);
+        setAuthorMap(
+          newAuthorMap,
+        );
+        setRatingMap(
+          newRatingMap,
+        );
       } catch (error) {
         console.error(
           'Gagal memuat novel populer:',
@@ -156,6 +269,9 @@ export function PopularNovels() {
 
         if (!cancelled) {
           setNovels([]);
+        }
+      } finally {
+        if (!cancelled) {
           setLoading(false);
         }
       }
@@ -183,6 +299,7 @@ export function PopularNovels() {
               size={20}
               className="animate-spin text-primary"
             />
+
             Memuat novel...
           </div>
         </div>
@@ -198,53 +315,73 @@ export function PopularNovels() {
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-8">
-          {novels.map((novel, index) => {
-            const author = Array.isArray(
-              novel.profiles,
-            )
-              ? novel.profiles[0]
-              : novel.profiles;
+          {novels.map(
+            (novel, index) => {
+              const author =
+                authorMap.get(
+                  novel.author_id,
+                );
 
-            return (
-              <NovelCard
-                key={novel.id}
-                rank={index + 1}
-                novel={{
-                  id: novel.id,
-                  title: novel.title,
+              const rating =
+                ratingMap.get(
+                  novel.id,
+                );
 
-                  author:
-                    author?.display_name ||
-                    author?.username ||
-                    'Author',
+              return (
+                <NovelCard
+                  key={novel.id}
+                  rank={index + 1}
+                  novel={{
+                    id: novel.id,
 
-                  cover:
-                    novel.cover ||
-                    '/placeholder.svg',
+                    title:
+                      novel.title,
 
-                  genres: novel.genres,
+                    author:
+                      author?.display_name ||
+                      author?.username ||
+                      'Author',
 
-                  rating: 0,
-                  ratingCount: 0,
+                    cover:
+                      novel.cover ||
+                      '/placeholder.svg',
 
-                  views: String(
-                    novel.views ?? 0,
-                  ),
+                    genres: [],
 
-                  status:
-                    novel.status === 'completed'
-                      ? 'Completed'
-                      : novel.status === 'hiatus'
-                        ? 'Hiatus'
-                        : 'Ongoing',
+                    rating:
+                      rating?.average ??
+                      0,
 
-                  chapterCount: 0,
-                  latestChapter: '',
-                  description: '',
-                }}
-              />
-            );
-          })}
+                    ratingCount:
+                      rating?.count ??
+                      0,
+
+                    views: String(
+                      novel.views ??
+                        0,
+                    ),
+
+                    status:
+                      novel.status ===
+                      'completed'
+                        ? 'Completed'
+                        : novel.status ===
+                            'hiatus'
+                          ? 'Hiatus'
+                          : 'Ongoing',
+
+                    chapterCount: 0,
+
+                    latestChapter:
+                      '',
+
+                    description:
+                      '',
+                  }}
+                />
+              );
+            },
+          )}
         </div>
       )}
     </section>

@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, BookOpen, Loader2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  BookOpen,
+  Loader2,
+} from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 
 import { supabase } from '@/lib/supabase';
@@ -12,21 +16,37 @@ interface Genre {
   slug: string | null;
 }
 
+interface Profile {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+  avatar: string | null;
+}
+
 interface Novel {
   id: string;
   title: string;
   cover: string | null;
   status: string;
   views: number | null;
+  author_id: string | null;
+  author: string;
 }
 
 export default function GenreDetailPage() {
   const { id } = useParams<{ id: string }>();
 
-  const [genre, setGenre] = useState<Genre | null>(null);
-  const [novels, setNovels] = useState<Novel[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [genre, setGenre] =
+    useState<Genre | null>(null);
+
+  const [novels, setNovels] =
+    useState<Novel[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState('');
 
   useEffect(() => {
     if (!id) {
@@ -87,7 +107,7 @@ export default function GenreDetailPage() {
         setGenre(currentGenre);
 
         // =====================================================
-        // 2. CARI NOVEL BERDASARKAN GENRE
+        // 2. CARI NOVEL YANG TERHUBUNG DENGAN GENRE
         // =====================================================
 
         const {
@@ -95,11 +115,7 @@ export default function GenreDetailPage() {
           error: novelGenreError,
         } = await supabase
           .from('novel_genres')
-          .select(
-            `
-              novel_id
-            `,
-          )
+          .select('novel_id')
           .eq(
             'genre_id',
             currentGenre.id,
@@ -147,23 +163,16 @@ export default function GenreDetailPage() {
               title,
               cover,
               status,
-              views
+              views,
+              author_id
             `,
           )
-          .in(
-            'id',
-            novelIds,
-          )
-          .eq(
-            'visibility',
-            'public',
-          )
-          .order(
-            'views',
-            {
-              ascending: false,
-            },
-          );
+          .in('id', novelIds)
+          .eq('visibility', 'public')
+          .order('views', {
+            ascending: false,
+            nullsFirst: false,
+          });
 
         if (cancelled) return;
 
@@ -181,10 +190,95 @@ export default function GenreDetailPage() {
           return;
         }
 
-        setNovels(
-          (novelData ?? []) as Novel[],
+        const rawNovels =
+          novelData ?? [];
+
+        // =====================================================
+        // 4. AMBIL PROFILE AUTHOR
+        // =====================================================
+
+        const authorIds = Array.from(
+          new Set(
+            rawNovels
+              .map(
+                (novel) =>
+                  novel.author_id,
+              )
+              .filter(
+                (
+                  authorId,
+                ): authorId is string =>
+                  Boolean(authorId),
+              ),
+          ),
         );
 
+        let profiles: Profile[] = [];
+
+        if (authorIds.length > 0) {
+          const {
+            data: profileData,
+            error: profileError,
+          } = await supabase
+            .from('profiles')
+            .select(
+              `
+                id,
+                username,
+                display_name,
+                avatar
+              `,
+            )
+            .in(
+              'id',
+              authorIds,
+            );
+
+          if (profileError) {
+            console.error(
+              'Gagal mengambil profile author:',
+              profileError,
+            );
+          } else {
+            profiles =
+              (profileData ??
+                []) as Profile[];
+          }
+        }
+
+        // =====================================================
+        // 5. GABUNGKAN NOVEL + AUTHOR
+        // =====================================================
+
+        const finalNovels: Novel[] =
+          rawNovels.map((novel) => {
+            const profile =
+              profiles.find(
+                (item) =>
+                  item.id ===
+                  novel.author_id,
+              );
+
+            const author =
+              profile?.username ||
+              profile?.display_name ||
+              'Author';
+
+            return {
+              id: novel.id,
+              title: novel.title,
+              cover: novel.cover,
+              status: novel.status,
+              views: novel.views,
+              author_id:
+                novel.author_id,
+              author,
+            };
+          });
+
+        if (cancelled) return;
+
+        setNovels(finalNovels);
         setLoading(false);
       } catch (err) {
         console.error(
@@ -366,7 +460,7 @@ export default function GenreDetailPage() {
                 novel={{
                   id: novel.id,
                   title: novel.title,
-                  author: 'Author',
+                  author: novel.author,
                   cover:
                     novel.cover ||
                     '/placeholder.svg',
