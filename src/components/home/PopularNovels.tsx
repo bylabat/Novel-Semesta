@@ -5,12 +5,20 @@ import { supabase } from '@/lib/supabase';
 import { NovelCard } from '@/components/NovelCard';
 import { SectionHeader } from '@/components/SectionHeader';
 
+interface Profile {
+  username: string | null;
+  display_name: string | null;
+}
+
 interface Novel {
   id: string;
   title: string;
   cover: string | null;
   status: string;
   views: number | null;
+  author_id: string;
+  profiles: Profile | Profile[] | null;
+  genres: string[];
 }
 
 export function PopularNovels() {
@@ -23,39 +31,134 @@ export function PopularNovels() {
     async function loadPopularNovels() {
       setLoading(true);
 
-      const { data, error } = await supabase
-        .from('novels')
-        .select(
-          `
+      try {
+        // ==========================================
+        // 1. AMBIL NOVEL POPULER
+        // ==========================================
+
+        const { data, error } = await supabase
+          .from('novels')
+          .select(`
             id,
             title,
             cover,
             status,
-            views
-          `,
-        )
-        .eq('visibility', 'public')
-        .order('views', {
-          ascending: false,
-        })
-        .limit(8);
+            views,
+            author_id,
+            profiles:author_id (
+              username,
+              display_name
+            )
+          `)
+          .eq('visibility', 'public')
+          .order('views', {
+            ascending: false,
+            nullsFirst: false,
+          })
+          .limit(8);
 
-      if (cancelled) return;
+        if (cancelled) return;
 
-      if (error) {
+        if (error) {
+          console.error(
+            'Gagal mengambil novel populer:',
+            error,
+          );
+
+          setNovels([]);
+          setLoading(false);
+          return;
+        }
+
+        const novelData = data ?? [];
+
+        // ==========================================
+        // 2. JIKA TIDAK ADA NOVEL
+        // ==========================================
+
+        if (novelData.length === 0) {
+          setNovels([]);
+          setLoading(false);
+          return;
+        }
+
+        // ==========================================
+        // 3. AMBIL ID NOVEL
+        // ==========================================
+
+        const novelIds = novelData.map(
+          (novel) => novel.id,
+        );
+
+        // ==========================================
+        // 4. AMBIL RELASI GENRE
+        // ==========================================
+
+        const {
+          data: genreRelations,
+          error: genreError,
+        } = await supabase
+          .from('novel_genres')
+          .select(`
+            novel_id,
+            genres (
+              name
+            )
+          `)
+          .in('novel_id', novelIds);
+
+        if (cancelled) return;
+
+        if (genreError) {
+          console.error(
+            'Gagal mengambil genre novel populer:',
+            genreError,
+          );
+        }
+
+        // ==========================================
+        // 5. GABUNGKAN GENRE KE NOVEL
+        // ==========================================
+
+        const formattedNovels: Novel[] =
+          novelData.map((novel) => {
+            const genres =
+              (genreRelations ?? [])
+                .filter(
+                  (relation) =>
+                    relation.novel_id === novel.id,
+                )
+                .map((relation) => {
+                  const genre = Array.isArray(
+                    relation.genres,
+                  )
+                    ? relation.genres[0]
+                    : relation.genres;
+
+                  return genre?.name ?? '';
+                })
+                .filter(Boolean);
+
+            return {
+              ...novel,
+              views: novel.views ?? 0,
+              genres,
+            } as Novel;
+          });
+
+        setNovels(formattedNovels);
+        setLoading(false);
+      } catch (error) {
         console.error(
-          'Gagal mengambil novel populer:',
+          'Gagal memuat novel populer:',
           error,
         );
 
-        setNovels([]);
-      } else {
-        setNovels(
-          (data ?? []) as Novel[],
-        );
+        if (!cancelled) {
+          setNovels([]);
+          setLoading(false);
+        }
       }
-
-      setLoading(false);
     }
 
     loadPopularNovels();
@@ -95,35 +198,53 @@ export function PopularNovels() {
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-8">
-          {novels.map((novel, index) => (
-            <NovelCard
-              key={novel.id}
-              rank={index + 1}
-              novel={{
-                id: novel.id,
-                title: novel.title,
-                author: 'Author',
-                cover:
-                  novel.cover ||
-                  '/placeholder.svg',
-                genres: [],
-                rating: 0,
-                ratingCount: 0,
-                views: String(
-                  novel.views ?? 0,
-                ),
-                status:
-                  novel.status === 'completed'
-                    ? 'Completed'
-                    : novel.status === 'hiatus'
-                      ? 'Hiatus'
-                      : 'Ongoing',
-                chapterCount: 0,
-                latestChapter: '',
-                description: '',
-              }}
-            />
-          ))}
+          {novels.map((novel, index) => {
+            const author = Array.isArray(
+              novel.profiles,
+            )
+              ? novel.profiles[0]
+              : novel.profiles;
+
+            return (
+              <NovelCard
+                key={novel.id}
+                rank={index + 1}
+                novel={{
+                  id: novel.id,
+                  title: novel.title,
+
+                  author:
+                    author?.display_name ||
+                    author?.username ||
+                    'Author',
+
+                  cover:
+                    novel.cover ||
+                    '/placeholder.svg',
+
+                  genres: novel.genres,
+
+                  rating: 0,
+                  ratingCount: 0,
+
+                  views: String(
+                    novel.views ?? 0,
+                  ),
+
+                  status:
+                    novel.status === 'completed'
+                      ? 'Completed'
+                      : novel.status === 'hiatus'
+                        ? 'Hiatus'
+                        : 'Ongoing',
+
+                  chapterCount: 0,
+                  latestChapter: '',
+                  description: '',
+                }}
+              />
+            );
+          })}
         </div>
       )}
     </section>
