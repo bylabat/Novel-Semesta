@@ -7,7 +7,7 @@ export interface Novel {
   rating: number;
   ratingCount: number;
   views: string;
-  status: 'Ongoing' | 'Completed' | 'Hiatus';
+  status: "Ongoing" | "Completed" | "Hiatus";
   chapterCount: number;
   latestChapter: string;
   description: string;
