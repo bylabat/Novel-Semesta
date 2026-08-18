@@ -1,1167 +1,1475 @@
-import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import {
-  ArrowLeft,
-  BookOpen,
-  Bookmark,
-  Eye,
-  ListOrdered,
-  Loader2,
-  Play,
-  Star,
-} from "lucide-react";
+      import { useEffect, useState } from "react";
+      import { Link, useParams } from "react-router-dom";
+      import {
+        ArrowLeft,
+        BookOpen,
+        Bookmark,
+        Eye,
+        ListOrdered,
+        Loader2,
+        Play,
+        Star,
+      } from "lucide-react";
 
-import { supabase } from "@/lib/supabase";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/EmptyState";
+      import { supabase } from "@/lib/supabase";
+      import { Badge } from "@/components/ui/badge";
+      import { Button } from "@/components/ui/button";
+      import { EmptyState } from "@/components/EmptyState";
 
-interface Novel {
-  id: string;
-  title: string;
-  description: string | null;
-  cover: string | null;
-  status: string;
-  visibility: string;
-  author_id: string;
-  views: number | null;
-  created_at: string;
-  updated_at: string;
-}
+      interface Novel {
+        id: string;
+        title: string;
+        description: string | null;
+        cover: string | null;
+        status: string;
+        visibility: string;
+        author_id: string;
+        views: number | null;
+        created_at: string;
+        updated_at: string;
+      }
 
-interface Author {
-  id: string;
-  username: string | null;
-  display_name: string | null;
-  avatar: string | null;
-}
+      interface Author {
+        id: string;
+        username: string | null;
+        display_name: string | null;
+        avatar: string | null;
+      }
 
-interface Genre {
-  id: string;
-  name: string;
-  slug: string | null;
-}
+      interface Genre {
+        id: string;
+        name: string;
+        slug: string | null;
+      }
 
-interface NovelGenreRow {
-  genre_id: string;
-  genres: Genre | null;
-}
+      interface NovelGenreRow {
+        genre_id: string;
+        genres: Genre | null;
+      }
 
-interface RatingSummary {
-  average: number;
-  count: number;
-}
+      interface RatingSummary {
+        average: number;
+        count: number;
+      }
 
-interface Chapter {
-  id: string;
-  novel_id: string;
-  title: string;
-  chapter_number: number;
-  content: string;
-  published: boolean;
-  word_count: number | null;
-  created_at: string;
-  updated_at: string;
-}
+      interface Chapter {
+        id: string;
+        novel_id: string;
+        title: string;
+        chapter_number: number;
+        content: string;
+        published: boolean;
+        word_count: number | null;
+        created_at: string;
+        updated_at: string;
+      }
 
-export default function NovelDetailPage() {
-  const { id } = useParams<{ id: string }>();
+      export default function NovelDetailPage() {
+        const { id } = useParams<{ id: string }>();
 
-  const [novel, setNovel] = useState<Novel | null>(null);
-  const [author, setAuthor] = useState<Author | null>(null);
-  const [genres, setGenres] = useState<Genre[]>([]);
-  const [chapters, setChapters] = useState<Chapter[]>([]);
+        const [novel, setNovel] = useState<Novel | null>(null);
+        const [author, setAuthor] = useState<Author | null>(null);
+        const [genres, setGenres] = useState<Genre[]>([]);
+        const [chapters, setChapters] = useState<Chapter[]>([]);
 
-  const [ratingSummary, setRatingSummary] = useState<RatingSummary>({
-    average: 0,
-    count: 0,
-  });
-
-  const [userRating, setUserRating] = useState<number | null>(null);
-  const [ratingLoading, setRatingLoading] = useState(false);
-  const [hoverRating, setHoverRating] = useState<number | null>(null);
-
-  const [lastReadChapterId, setLastReadChapterId] =
-    useState<string | null>(null);
-
-  const [isInLibrary, setIsInLibrary] = useState(false);
-  const [libraryLoading, setLibraryLoading] = useState(false);
-
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!id) {
-      setError("ID novel tidak ditemukan.");
-      setLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadNovel() {
-      setLoading(true);
-      setError("");
-
-      try {
-        // =====================================================
-        // 1. AMBIL DATA NOVEL
-        // =====================================================
-
-        const { data: novelData, error: novelError } = await supabase
-          .from("novels")
-          .select(
-            `
-              id,
-              title,
-              description,
-              cover,
-              status,
-              visibility,
-              author_id,
-              views,
-              created_at,
-              updated_at
-            `,
-          )
-          .eq("id", id)
-          .maybeSingle();
-
-        if (cancelled) return;
-
-        if (novelError) {
-          console.error("Gagal mengambil novel:", novelError);
-          setError(novelError.message);
-          setLoading(false);
-          return;
-        }
-
-        if (!novelData) {
-          setNovel(null);
-          setLoading(false);
-          return;
-        }
-
-        const currentNovel = novelData as Novel;
-
-        setNovel(currentNovel);
-
-        // =====================================================
-        // 2. AMBIL PROFIL AUTHOR
-        // =====================================================
-
-        const { data: authorData, error: authorError } = await supabase
-          .from("profiles")
-          .select(
-            `
-              id,
-              username,
-              display_name,
-              avatar
-            `,
-          )
-          .eq("id", currentNovel.author_id)
-          .maybeSingle();
-
-        if (cancelled) return;
-
-        if (authorError) {
-          console.error("Gagal mengambil profil author:", authorError);
-          setAuthor(null);
-        } else {
-          setAuthor(authorData as Author | null);
-        }
-
-        // =====================================================
-        // 3. AMBIL SEMUA RATING NOVEL
-        // =====================================================
-
-        const { data: ratingData, error: ratingError } = await supabase
-          .from("ratings")
-          .select("rating")
-          .eq("novel_id", currentNovel.id);
-
-        if (cancelled) return;
-
-        if (ratingError) {
-          console.error("Gagal mengambil rating:", ratingError);
-
-          setRatingSummary({
+        const [ratingSummary, setRatingSummary] =
+          useState<RatingSummary>({
             average: 0,
             count: 0,
           });
-        } else {
-          const ratings = (ratingData ?? []) as { rating: number }[];
 
-          const count = ratings.length;
+        const [userRating, setUserRating] =
+          useState<number | null>(null);
 
-          const average =
-            count > 0
-              ? ratings.reduce(
-                  (sum, item) => sum + Number(item.rating),
-                  0,
-                ) / count
-              : 0;
+        const [ratingLoading, setRatingLoading] =
+          useState(false);
 
-          setRatingSummary({
-            average,
-            count,
-          });
-        }
+        const [hoverRating, setHoverRating] =
+          useState<number | null>(null);
 
-        // =====================================================
-        // 4. CEK USER, RATING USER, DAN STATUS RAK
-        // =====================================================
+        // ===========================================================
+        // PROGRESS MEMBACA TERAKHIR
+        // ===========================================================
 
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+        const [lastReadChapterId, setLastReadChapterId] =
+          useState<string | null>(null);
 
-        if (cancelled) return;
+        const [isInLibrary, setIsInLibrary] =
+          useState(false);
 
-        if (user) {
-          // ===================================================
-          // RATING USER
-          // ===================================================
+        const [libraryLoading, setLibraryLoading] =
+          useState(false);
 
-          const {
-            data: userRatingData,
-            error: userRatingError,
-          } = await supabase
-            .from("ratings")
-            .select("rating")
-            .eq("novel_id", currentNovel.id)
-            .eq("user_id", user.id)
-            .maybeSingle();
+        const [loading, setLoading] =
+          useState(true);
 
-          if (cancelled) return;
+        const [error, setError] =
+          useState("");
 
-          if (userRatingError) {
-            console.error(
-              "Gagal mengambil rating user:",
-              userRatingError,
-            );
+        // ===========================================================
+        // LOAD DATA NOVEL
+        // ===========================================================
 
-            setUserRating(null);
-          } else {
-            setUserRating(
-              userRatingData
-                ? Number(userRatingData.rating)
-                : null,
-            );
+        useEffect(() => {
+          if (!id) {
+            setError("ID novel tidak ditemukan.");
+            setLoading(false);
+            return;
           }
 
-          // ===================================================
-          // STATUS RAK
-          // ===================================================
+          let cancelled = false;
 
-          const { data: libraryData, error: libraryError } =
-            await supabase
-              .from("user_library")
-              .select("id")
-              .eq("user_id", user.id)
-              .eq("novel_id", currentNovel.id)
-              .maybeSingle();
+          async function loadNovel() {
+            setLoading(true);
+            setError("");
 
-          if (cancelled) return;
+            try {
+              // =====================================================
+              // 1. AMBIL DATA NOVEL
+              // =====================================================
 
-          if (libraryError) {
-            console.error("Gagal mengecek Rak:", libraryError);
-            setIsInLibrary(false);
-          } else {
-            setIsInLibrary(Boolean(libraryData));
-          }
-        } else {
-          setUserRating(null);
-          setIsInLibrary(false);
-        }
+              const {
+                data: novelData,
+                error: novelError,
+              } = await supabase
+                .from("novels")
+                .select(
+                  `
+                    id,
+                    title,
+                    description,
+                    cover,
+                    status,
+                    visibility,
+                    author_id,
+                    views,
+                    created_at,
+                    updated_at
+                  `,
+                )
+                .eq("id", id)
+                .maybeSingle();
 
-        // =====================================================
-        // 5. AMBIL GENRE
-        // =====================================================
+              if (cancelled) return;
 
-        const { data: genreData, error: genreError } = await supabase
-          .from("novel_genres")
-          .select(
-            `
-              genre_id,
-              genres (
-                id,
-                name,
-                slug
-              )
-            `,
-          )
-          .eq("novel_id", id);
+              if (novelError) {
+                console.error(
+                  "Gagal mengambil novel:",
+                  novelError,
+                );
 
-        if (cancelled) return;
+                setError(novelError.message);
+                setLoading(false);
+                return;
+              }
 
-        if (genreError) {
-          console.error("Gagal mengambil genre:", genreError);
-          setGenres([]);
-        } else {
-          const rows = (genreData ?? []) as unknown as NovelGenreRow[];
+              if (!novelData) {
+                setNovel(null);
+                setLoading(false);
+                return;
+              }
 
-          const genreList = rows
-            .map((row) => row.genres)
-            .filter(
-              (genre): genre is Genre => genre !== null,
-            );
+              const currentNovel =
+                novelData as Novel;
 
-          setGenres(genreList);
-        }
+              setNovel(currentNovel);
 
-        // =====================================================
-        // 6. AMBIL CHAPTER YANG SUDAH DITERBITKAN
-        // =====================================================
+              // =====================================================
+              // 2. AMBIL PROFIL AUTHOR
+              // =====================================================
 
-        const { data: chapterData, error: chapterError } =
-          await supabase
-            .from("chapters")
-            .select(
-              `
-                id,
-                novel_id,
-                title,
-                chapter_number,
-                content,
-                published,
-                word_count,
-                created_at,
-                updated_at
-              `,
-            )
-            .eq("novel_id", id)
-            .eq("published", true)
-            .order("chapter_number", {
-              ascending: false,
-            });
+              const {
+                data: authorData,
+                error: authorError,
+              } = await supabase
+                .from("profiles")
+                .select(
+                  `
+                    id,
+                    username,
+                    display_name,
+                    avatar
+                  `,
+                )
+                .eq(
+                  "id",
+                  currentNovel.author_id,
+                )
+                .maybeSingle();
 
-        if (cancelled) return;
+              if (cancelled) return;
 
-        if (chapterError) {
-          console.error("Gagal mengambil chapter:", chapterError);
-          setChapters([]);
-        } else {
-          const chapterList = (chapterData ?? []) as Chapter[];
+              if (authorError) {
+                console.error(
+                  "Gagal mengambil profil author:",
+                  authorError,
+                );
 
-          setChapters(chapterList);
+                setAuthor(null);
+              } else {
+                setAuthor(
+                  authorData as Author | null,
+                );
+              }
 
-          // =================================================
-          // CEK CHAPTER TERAKHIR YANG DIBACA
-          // =================================================
+              // =====================================================
+              // 3. AMBIL SEMUA RATING NOVEL
+              // =====================================================
 
-          const savedChapterId = localStorage.getItem(
-            `last_read_chapter_${id}`,
-          );
+              const {
+                data: ratingData,
+                error: ratingError,
+              } = await supabase
+                .from("ratings")
+                .select("rating")
+                .eq(
+                  "novel_id",
+                  currentNovel.id,
+                );
 
-          if (savedChapterId) {
-            const chapterExists = chapterList.some(
-              (chapter) => chapter.id === savedChapterId,
-            );
+              if (cancelled) return;
 
-            if (chapterExists) {
-              setLastReadChapterId(savedChapterId);
-            } else {
-              setLastReadChapterId(null);
+              if (ratingError) {
+                console.error(
+                  "Gagal mengambil rating:",
+                  ratingError,
+                );
+
+                setRatingSummary({
+                  average: 0,
+                  count: 0,
+                });
+              } else {
+                const ratings =
+                  (ratingData ?? []) as {
+                    rating: number;
+                  }[];
+
+                const count =
+                  ratings.length;
+
+                const average =
+                  count > 0
+                    ? ratings.reduce(
+                        (sum, item) =>
+                          sum +
+                          Number(item.rating),
+                        0,
+                      ) / count
+                    : 0;
+
+                setRatingSummary({
+                  average,
+                  count,
+                });
+              }
+
+              // =====================================================
+              // 4. CEK USER
+              // =====================================================
+
+              const {
+                data: { user },
+              } = await supabase.auth.getUser();
+
+              if (cancelled) return;
+
+              if (user) {
+                // ===================================================
+                // 4A. RATING USER
+                // ===================================================
+
+                const {
+                  data: userRatingData,
+                  error: userRatingError,
+                } = await supabase
+                  .from("ratings")
+                  .select("rating")
+                  .eq(
+                    "novel_id",
+                    currentNovel.id,
+                  )
+                  .eq(
+                    "user_id",
+                    user.id,
+                  )
+                  .maybeSingle();
+
+                if (cancelled) return;
+
+                if (userRatingError) {
+                  console.error(
+                    "Gagal mengambil rating user:",
+                    userRatingError,
+                  );
+
+                  setUserRating(null);
+                } else {
+                  setUserRating(
+                    userRatingData
+                      ? Number(
+                          userRatingData.rating,
+                        )
+                      : null,
+                  );
+                }
+
+                // ===================================================
+                // 4B. STATUS RAK
+                // ===================================================
+
+                const {
+                  data: libraryData,
+                  error: libraryError,
+                } = await supabase
+                  .from("user_library")
+                  .select("id")
+                  .eq(
+                    "user_id",
+                    user.id,
+                  )
+                  .eq(
+                    "novel_id",
+                    currentNovel.id,
+                  )
+                  .maybeSingle();
+
+                if (cancelled) return;
+
+                if (libraryError) {
+                  console.error(
+                    "Gagal mengecek Rak:",
+                    libraryError,
+                  );
+
+                  setIsInLibrary(false);
+                } else {
+                  setIsInLibrary(
+                    Boolean(libraryData),
+                  );
+                }
+              } else {
+                setUserRating(null);
+                setIsInLibrary(false);
+              }
+
+              // =====================================================
+              // 5. AMBIL GENRE
+              // =====================================================
+
+              const {
+                data: genreData,
+                error: genreError,
+              } = await supabase
+                .from("novel_genres")
+                .select(
+                  `
+                    genre_id,
+                    genres (
+                      id,
+                      name,
+                      slug
+                    )
+                  `,
+                )
+                .eq(
+                  "novel_id",
+                  id,
+                );
+
+              if (cancelled) return;
+
+              if (genreError) {
+                console.error(
+                  "Gagal mengambil genre:",
+                  genreError,
+                );
+
+                setGenres([]);
+              } else {
+                const rows =
+                  (genreData ?? []) as unknown as NovelGenreRow[];
+
+                const genreList =
+                  rows
+                    .map(
+                      (row) =>
+                        row.genres,
+                    )
+                    .filter(
+                      (
+                        genre,
+                      ): genre is Genre =>
+                        genre !== null,
+                    );
+
+                setGenres(
+                  genreList,
+                );
+              }
+
+              // =====================================================
+              // 6. AMBIL CHAPTER
+              // =====================================================
+
+              const {
+                data: chapterData,
+                error: chapterError,
+              } = await supabase
+                .from("chapters")
+                .select(
+                  `
+                    id,
+                    novel_id,
+                    title,
+                    chapter_number,
+                    content,
+                    published,
+                    word_count,
+                    created_at,
+                    updated_at
+                  `,
+                )
+                .eq(
+                  "novel_id",
+                  currentNovel.id,
+                )
+                .eq(
+                  "published",
+                  true,
+                )
+                .order(
+                  "chapter_number",
+                  {
+                    ascending: false,
+                  },
+                );
+
+              if (cancelled) return;
+
+              if (chapterError) {
+                console.error(
+                  "Gagal mengambil chapter:",
+                  chapterError,
+                );
+
+                setChapters([]);
+              } else {
+                const chapterList =
+                  (chapterData ??
+                    []) as Chapter[];
+
+                setChapters(
+                  chapterList,
+                );
+
+                // =================================================
+                // 7. CEK PROGRESS MEMBACA USER
+                // =================================================
+
+                const {
+                  data: progressUserData,
+                } =
+                  await supabase.auth.getUser();
+
+                if (cancelled) return;
+
+                const progressUser =
+                  progressUserData.user;
+
+                if (progressUser) {
+                  const {
+                    data: progressData,
+                    error: progressError,
+                  } = await supabase
+                    .from(
+                      "reading_progress",
+                    )
+                    .select(
+                      "chapter_id, progress, updated_at",
+                    )
+                    .eq(
+                      "user_id",
+                      progressUser.id,
+                    )
+                    .eq(
+                      "novel_id",
+                      currentNovel.id,
+                    )
+                    .order(
+                      "updated_at",
+                      {
+                        ascending: false,
+                      },
+                    )
+                    .limit(1)
+                    .maybeSingle();
+
+                  if (cancelled) return;
+
+                  if (progressError) {
+                    console.error(
+                      "Gagal mengambil progress membaca:",
+                      progressError,
+                    );
+
+                    setLastReadChapterId(
+                      null,
+                    );
+                  } else if (
+                    progressData
+                  ) {
+                    const chapterExists =
+                      chapterList.some(
+                        (chapter) =>
+                          chapter.id ===
+                          progressData.chapter_id,
+                      );
+
+                    if (
+                      chapterExists
+                    ) {
+                      setLastReadChapterId(
+                        progressData.chapter_id,
+                      );
+                    } else {
+                      setLastReadChapterId(
+                        null,
+                      );
+                    }
+                  } else {
+                    setLastReadChapterId(
+                      null,
+                    );
+                  }
+                } else {
+                  setLastReadChapterId(
+                    null,
+                  );
+                }
+              }
+
+              // =====================================================
+              // SELESAI
+              // =====================================================
+
+              if (!cancelled) {
+                setLoading(false);
+              }
+            } catch (err) {
+              console.error(
+                "Kesalahan:",
+                err,
+              );
+
+              if (!cancelled) {
+                setError(
+                  err instanceof Error
+                    ? err.message
+                    : "Terjadi kesalahan saat memuat novel.",
+                );
+
+                setLoading(false);
+              }
             }
-          } else {
-            setLastReadChapterId(null);
+          }
+
+          loadNovel();
+
+          return () => {
+            cancelled = true;
+          };
+        }, [id]);
+
+        // ===========================================================
+        // SIMPAN / UPDATE RATING
+        // ===========================================================
+
+        async function submitRating(
+          value: number,
+        ) {
+          if (!novel) return;
+
+          if (
+            value < 1 ||
+            value > 5
+          ) {
+            return;
+          }
+
+          setRatingLoading(true);
+
+          try {
+            // =====================================================
+            // CEK USER
+            // =====================================================
+
+            const {
+              data: { user },
+              error: userError,
+            } = await supabase.auth.getUser();
+
+            if (userError) {
+              console.error(
+                "Gagal mendapatkan user:",
+                userError,
+              );
+
+              alert(
+                "Gagal memeriksa akun. Silakan coba lagi.",
+              );
+
+              return;
+            }
+
+            if (!user) {
+              alert(
+                "Silakan login terlebih dahulu untuk memberikan rating.",
+              );
+
+              return;
+            }
+
+            // =====================================================
+            // INSERT / UPDATE RATING
+            // =====================================================
+
+            const {
+              error: ratingError,
+            } = await supabase
+              .from("ratings")
+              .upsert(
+                {
+                  novel_id:
+                    novel.id,
+                  user_id:
+                    user.id,
+                  rating:
+                    value,
+                },
+                {
+                  onConflict:
+                    "user_id,novel_id",
+                },
+              );
+
+            if (ratingError) {
+              console.error(
+                "Gagal menyimpan rating:",
+                ratingError,
+              );
+
+              alert(
+                `Gagal menyimpan rating: ${ratingError.message}`,
+              );
+
+              return;
+            }
+
+            // =====================================================
+            // UPDATE RATING USER
+            // =====================================================
+
+            setUserRating(
+              value,
+            );
+
+            // =====================================================
+            // HITUNG ULANG RATING NOVEL
+            // =====================================================
+
+            const {
+              data: ratingData,
+              error: ratingReloadError,
+            } = await supabase
+              .from("ratings")
+              .select("rating")
+              .eq(
+                "novel_id",
+                novel.id,
+              );
+
+            if (ratingReloadError) {
+              console.error(
+                "Gagal memperbarui ringkasan rating:",
+                ratingReloadError,
+              );
+
+              return;
+            }
+
+            const ratings =
+              (ratingData ??
+                []) as {
+                rating: number;
+              }[];
+
+            const count =
+              ratings.length;
+
+            const average =
+              count > 0
+                ? ratings.reduce(
+                    (
+                      sum,
+                      item,
+                    ) =>
+                      sum +
+                      Number(
+                        item.rating,
+                      ),
+                    0,
+                  ) / count
+                : 0;
+
+            setRatingSummary({
+              average,
+              count,
+            });
+          } catch (err) {
+            console.error(
+              "Kesalahan saat menyimpan rating:",
+              err,
+            );
+
+            alert(
+              err instanceof Error
+                ? err.message
+                : "Terjadi kesalahan saat menyimpan rating.",
+            );
+          } finally {
+            setRatingLoading(
+              false,
+            );
           }
         }
 
-        setLoading(false);
-      } catch (err) {
-        console.error("Kesalahan:", err);
+        // ===========================================================
+        // TAMBAH / HAPUS RAK
+        // ===========================================================
 
-        if (!cancelled) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Terjadi kesalahan saat memuat novel.",
+        async function toggleLibrary() {
+          if (!novel) return;
+
+          setLibraryLoading(
+            true,
           );
 
-          setLoading(false);
-        }
-      }
-    }
+          try {
+            const {
+              data: { user },
+              error: userError,
+            } = await supabase.auth.getUser();
 
-    loadNovel();
+            if (userError) {
+              console.error(
+                "Gagal mendapatkan user:",
+                userError,
+              );
 
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
+              alert(
+                "Gagal memeriksa akun. Silakan coba lagi.",
+              );
 
-  
-    // ===========================================================
-    // SIMPAN / UPDATE RATING
-    // ===========================================================
+              return;
+            }
 
-    async function submitRating(value: number) {
-      if (!novel) return;
+            if (!user) {
+              alert(
+                "Silakan login terlebih dahulu untuk menambahkan novel ke Rak.",
+              );
 
-      if (value < 1 || value > 5) return;
+              return;
+            }
 
-      setRatingLoading(true);
+            // =====================================================
+            // HAPUS DARI RAK
+            // =====================================================
 
-      try {
-        // =====================================================
-        // CEK USER
-        // =====================================================
+            if (isInLibrary) {
+              const {
+                error: deleteError,
+              } = await supabase
+                .from(
+                  "user_library",
+                )
+                .delete()
+                .eq(
+                  "user_id",
+                  user.id,
+                )
+                .eq(
+                  "novel_id",
+                  novel.id,
+                );
 
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
+              if (deleteError) {
+                console.error(
+                  "Gagal menghapus dari Rak:",
+                  deleteError,
+                );
 
-        if (userError) {
-          console.error(
-            "Gagal mendapatkan user:",
-            userError,
-          );
+                alert(
+                  "Gagal menghapus novel dari Rak.",
+                );
 
-          alert("Gagal memeriksa akun. Silakan coba lagi.");
+                return;
+              }
 
-          return;
-        }
+              setIsInLibrary(
+                false,
+              );
 
-        if (!user) {
-          alert(
-            "Silakan login terlebih dahulu untuk memberikan rating.",
-          );
+              return;
+            }
 
-          return;
-        }
+            // =====================================================
+            // TAMBAH KE RAK
+            // =====================================================
 
-        // =====================================================
-        // INSERT / UPDATE RATING
-        // =====================================================
+            const {
+              error: insertError,
+            } = await supabase
+              .from(
+                "user_library",
+              )
+              .insert({
+                user_id:
+                  user.id,
+                novel_id:
+                  novel.id,
+              });
 
-        const { error: ratingError } = await supabase
-          .from("ratings")
-          .upsert(
-            {
-              novel_id: novel.id,
-              user_id: user.id,
-              rating: value,
-            },
-            {
-              onConflict: "user_id,novel_id",
-            },
-          );
+            if (insertError) {
+              console.error(
+                "Gagal menambahkan ke Rak:",
+                insertError,
+              );
 
-        if (ratingError) {
-          console.error(
-            "Gagal menyimpan rating:",
-            ratingError,
-          );
+              if (
+                insertError.code ===
+                "23505"
+              ) {
+                setIsInLibrary(
+                  true,
+                );
 
-          alert(
-            `Gagal menyimpan rating: ${ratingError.message}`,
-          );
+                return;
+              }
 
-          return;
-        }
+              alert(
+                "Gagal menambahkan novel ke Rak.",
+              );
 
-        // =====================================================
-        // UPDATE RATING USER
-        // =====================================================
+              return;
+            }
 
-        setUserRating(value);
-
-        // =====================================================
-        // HITUNG ULANG RATING NOVEL
-        // =====================================================
-
-        const {
-          data: ratingData,
-          error: ratingReloadError,
-        } = await supabase
-          .from("ratings")
-          .select("rating")
-          .eq("novel_id", novel.id);
-
-        if (ratingReloadError) {
-          console.error(
-            "Gagal memperbarui ringkasan rating:",
-            ratingReloadError,
-          );
-
-          return;
-        }
-
-        const ratings =
-          (ratingData ?? []) as { rating: number }[];
-
-        const count = ratings.length;
-
-        const average =
-          count > 0
-            ? ratings.reduce(
-                (sum, item) =>
-                  sum + Number(item.rating),
-                0,
-              ) / count
-            : 0;
-
-        setRatingSummary({
-          average,
-          count,
-        });
-      } catch (err) {
-        console.error(
-          "Kesalahan saat menyimpan rating:",
-          err,
-        );
-
-        alert(
-          err instanceof Error
-            ? err.message
-            : "Terjadi kesalahan saat menyimpan rating.",
-        );
-      } finally {
-        setRatingLoading(false);
-      }
-    }
-  // ===========================================================
-  // TAMBAH / HAPUS RAK
-  // ===========================================================
-
-  async function toggleLibrary() {
-    if (!novel) return;
-
-    setLibraryLoading(true);
-
-    try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError) {
-        console.error(
-          "Gagal mendapatkan user:",
-          userError,
-        );
-
-        alert(
-          "Gagal memeriksa akun. Silakan coba lagi.",
-        );
-
-        return;
-      }
-
-      if (!user) {
-        alert(
-          "Silakan login terlebih dahulu untuk menambahkan novel ke Rak.",
-        );
-
-        return;
-      }
-
-      // =====================================================
-      // HAPUS DARI RAK
-      // =====================================================
-
-      if (isInLibrary) {
-        const { error: deleteError } = await supabase
-          .from("user_library")
-          .delete()
-          .eq("user_id", user.id)
-          .eq("novel_id", novel.id);
-
-        if (deleteError) {
-          console.error(
-            "Gagal menghapus dari Rak:",
-            deleteError,
-          );
-
-          alert(
-            "Gagal menghapus novel dari Rak.",
-          );
-
-          return;
+            setIsInLibrary(
+              true,
+            );
+          } finally {
+            setLibraryLoading(
+              false,
+            );
+          }
         }
 
-        setIsInLibrary(false);
+        // ===========================================================
+        // LOADING
+        // ===========================================================
 
-        return;
-      }
-
-      // =====================================================
-      // TAMBAH KE RAK
-      // =====================================================
-
-      const { error: insertError } = await supabase
-        .from("user_library")
-        .insert({
-          user_id: user.id,
-          novel_id: novel.id,
-        });
-
-      if (insertError) {
-        console.error(
-          "Gagal menambahkan ke Rak:",
-          insertError,
-        );
-
-        if (insertError.code === "23505") {
-          setIsInLibrary(true);
-          return;
-        }
-
-        alert(
-          "Gagal menambahkan novel ke Rak.",
-        );
-
-        return;
-      }
-
-      setIsInLibrary(true);
-    } finally {
-      setLibraryLoading(false);
-    }
-  }
-
-  // ===========================================================
-  // LOADING
-  // ===========================================================
-
-  if (loading) {
-    return (
-      <div className="flex min-h-[500px] items-center justify-center">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2
-            size={24}
-            className="animate-spin text-primary"
-          />
-
-          Memuat novel...
-        </div>
-      </div>
-    );
-  }
-
-  // ===========================================================
-  // ERROR
-  // ===========================================================
-
-  if (error) {
-    return (
-      <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
-        <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-5">
-          <p className="font-medium text-destructive">
-            Gagal memuat novel
-          </p>
-
-          <p className="mt-2 break-words text-sm text-destructive/80">
-            {error}
-          </p>
-        </div>
-
-        <Button
-          variant="outline"
-          className="mt-5"
-          asChild
-        >
-          <Link to="/novel">
-            <ArrowLeft
-              size={16}
-              className="mr-2"
-            />
-
-            Kembali ke Novel
-          </Link>
-        </Button>
-      </div>
-    );
-  }
-
-  // ===========================================================
-  // NOVEL TIDAK DITEMUKAN
-  // ===========================================================
-
-  if (!novel) {
-    return (
-      <EmptyState
-        icon={BookOpen}
-        title="Novel tidak ditemukan"
-        description="Novel yang kamu cari tidak ditemukan di database."
-        action={
-          <Button
-            variant="outline"
-            asChild
-          >
-            <Link to="/novel">
-              Lihat semua novel
-            </Link>
-          </Button>
-        }
-      />
-    );
-  }
-
-  // ===========================================================
-  // STATUS
-  // ===========================================================
-
-  const statusLabel =
-    novel.status === "ongoing"
-      ? "Ongoing"
-      : novel.status === "completed"
-        ? "Completed"
-        : novel.status === "hiatus"
-          ? "Hiatus"
-          : novel.status || "Belum ditentukan";
-
-  // ===========================================================
-  // COVER
-  // ===========================================================
-
-  const cover =
-    novel.cover || "/placeholder.svg";
-
-  // ===========================================================
-  // VIEWS
-  // ===========================================================
-
-  const views = Number(
-    novel.views ?? 0,
-  );
-
-  // ===========================================================
-  // CHAPTER PERTAMA
-  //
-  // Array DESC:
-  // Chapter 3
-  // Chapter 2
-  // Chapter 1
-  //
-  // Jadi chapter pertama = item terakhir.
-  // ===========================================================
-
-  const firstChapter =
-    chapters.length > 0
-      ? chapters[chapters.length - 1]
-      : null;
-
-  // ===========================================================
-  // RATING DISPLAY
-  // ===========================================================
-
-  const displayedRating =
-    hoverRating ?? userRating ?? 0;
-
-  return (
-    <div className="pb-12">
-
-      {/* =====================================================
-          HERO BACKDROP
-      ====================================================== */}
-
-      <div className="relative h-64 w-full overflow-hidden sm:h-80">
-        <img
-          src={cover}
-          alt={novel.title}
-          className="h-full w-full scale-105 object-cover blur-sm"
-        />
-
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/40" />
-      </div>
-
-      <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8">
-
-        {/* ===================================================
-            KEMBALI
-        ==================================================== */}
-
-        <Link
-          to="/novel"
-          className="mt-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-primary"
-        >
-          <ArrowLeft size={16} />
-
-          Kembali
-        </Link>
-
-        {/* ===================================================
-            DETAIL NOVEL
-        ==================================================== */}
-
-        <div className="mt-4 flex flex-col gap-6 sm:flex-row">
-
-          {/* COVER */}
-
-          <div className="mx-auto w-40 shrink-0 overflow-hidden rounded-xl border border-border shadow-xl sm:mx-0 sm:w-48">
-            <img
-              src={cover}
-              alt={novel.title}
-              className="aspect-[3/4] w-full object-cover"
-            />
-          </div>
-
-          {/* INFO */}
-
-          <div className="flex-1 space-y-4">
-
-            {/* STATUS */}
-
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="secondary">
-                {statusLabel}
-              </Badge>
-
-              {novel.visibility === "public" && (
-                <Badge className="bg-primary text-primary-foreground">
-                  Publik
-                </Badge>
-              )}
-            </div>
-
-            {/* JUDUL */}
-
-            <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl lg:text-4xl">
-              {novel.title}
-            </h1>
-
-            {/* AUTHOR */}
-
-            <p className="text-sm text-muted-foreground">
-              Novel karya{" "}
-              <span className="font-medium text-foreground">
-                {author?.display_name ||
-                  author?.username ||
-                  "Author"}
-              </span>
-            </p>
-
-            {/* RATING SUMMARY */}
-
-            <div className="flex flex-wrap items-center gap-3">
-
-              <div className="flex items-center gap-1">
-                <Star
-                  size={18}
-                  className="fill-amber-400 text-amber-400"
+        if (loading) {
+          return (
+            <div className="flex min-h-[500px] items-center justify-center">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2
+                  size={24}
+                  className="animate-spin text-primary"
                 />
 
-                <span className="font-semibold text-foreground">
-                  {ratingSummary.average.toFixed(1)}
-                </span>
+                Memuat novel...
               </div>
-
-              <span className="text-sm text-muted-foreground">
-                {ratingSummary.count.toLocaleString(
-                  "id-ID",
-                )}{" "}
-                rating
-              </span>
             </div>
+          );
+        }
 
-            {/* GENRE */}
+        // ===========================================================
+        // ERROR
+        // ===========================================================
 
-            {genres.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {genres.map((genre) => (
-                  <span
-                    key={genre.id}
-                    className="rounded-lg border border-border bg-card px-3 py-1 text-xs font-medium text-foreground"
-                  >
-                    {genre.name}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                Belum ada genre.
-              </p>
-            )}
-
-            {/* DESKRIPSI */}
-
-            <p className="max-w-2xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground sm:text-base">
-              {novel.description ||
-                "Belum ada deskripsi untuk novel ini."}
-            </p>
-
-            {/* =================================================
-                STATISTIK
-            ================================================== */}
-
-            <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-
-              <span className="flex items-center gap-1.5">
-                <Eye size={16} />
-
-                {views.toLocaleString(
-                  "id-ID",
-                )}{" "}
-                dibaca
-              </span>
-
-              <span className="flex items-center gap-1.5">
-                <ListOrdered size={16} />
-
-                {chapters.length} chapter
-              </span>
-            </div>
-
-            {/* =================================================
-                RATING USER
-            ================================================== */}
-
-            <div className="rounded-xl border border-border bg-card/50 p-4">
-
-              <p className="mb-2 text-sm font-medium text-foreground">
-                {userRating
-                  ? "Rating kamu"
-                  : "Beri rating novel ini"}
-              </p>
-
-              <div className="flex items-center gap-1">
-
-                {Array.from({
-                  length: 5,
-                }).map((_, index) => {
-
-                  const starValue =
-                    index + 1;
-
-                  const active =
-                    starValue <=
-                    displayedRating;
-
-                  return (
-                    <button
-                      key={starValue}
-                      type="button"
-                      disabled={ratingLoading}
-                      onMouseEnter={() =>
-                        setHoverRating(
-                          starValue,
-                        )
-                      }
-                      onMouseLeave={() =>
-                        setHoverRating(null)
-                      }
-                      onClick={() =>
-                        submitRating(
-                          starValue,
-                        )
-                      }
-                      className="rounded-md p-1 transition-transform hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50"
-                      aria-label={`Beri rating ${starValue} dari 5`}
-                    >
-                      <Star
-                        size={24}
-                        className={
-                          active
-                            ? "fill-amber-400 text-amber-400"
-                            : "fill-muted text-muted-foreground/40"
-                        }
-                      />
-                    </button>
-                  );
-                })}
-
-                {ratingLoading && (
-                  <Loader2
-                    size={18}
-                    className="ml-2 animate-spin text-primary"
-                  />
-                )}
-              </div>
-
-              {!userRating && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Login diperlukan untuk memberikan rating.
+        if (error) {
+          return (
+            <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
+              <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-5">
+                <p className="font-medium text-destructive">
+                  Gagal memuat novel
                 </p>
-              )}
-            </div>
 
-            {/* =================================================
-                BUTTON
-            ================================================== */}
+                <p className="mt-2 break-words text-sm text-destructive/80">
+                  {error}
+                </p>
+              </div>
 
-            <div className="flex flex-wrap gap-3 pt-2">
-
-              {/* BACA SEKARANG */}
-
-              {firstChapter ? (
-                <Button
-                  size="lg"
-                  className="glow-primary"
-                  asChild
-                >
-                  <Link
-                    to={`/read/${firstChapter.id}`}
-                  >
-                    <Play
-                      size={18}
-                      className="mr-1 fill-white"
-                    />
-
-                    Baca Sekarang
-                  </Link>
-                </Button>
-              ) : (
-                <Button
-                  size="lg"
-                  disabled
-                >
-                  <Play
-                    size={18}
-                    className="mr-1"
+              <Button
+                variant="outline"
+                className="mt-5"
+                asChild
+              >
+                <Link to="/novel">
+                  <ArrowLeft
+                    size={16}
+                    className="mr-2"
                   />
 
-                  Belum Ada Chapter
-                </Button>
-              )}
+                  Kembali ke Novel
+                </Link>
+              </Button>
+            </div>
+          );
+        }
 
-              {/* LANJUTKAN MEMBACA */}
+        // ===========================================================
+        // NOVEL TIDAK DITEMUKAN
+        // ===========================================================
 
-              {lastReadChapterId && (
+        if (!novel) {
+          return (
+            <EmptyState
+              icon={BookOpen}
+              title="Novel tidak ditemukan"
+              description="Novel yang kamu cari tidak ditemukan di database."
+              action={
                 <Button
-                  size="lg"
                   variant="outline"
                   asChild
                 >
-                  <Link
-                    to={`/read/${lastReadChapterId}`}
-                  >
-                    <BookOpen
-                      size={18}
-                      className="mr-2"
-                    />
-
-                    Lanjutkan Membaca
+                  <Link to="/novel">
+                    Lihat semua novel
                   </Link>
                 </Button>
-              )}
-
-              {/* TAMBAH / HAPUS RAK */}
-
-              <Button
-                size="lg"
-                variant="outline"
-                onClick={toggleLibrary}
-                disabled={libraryLoading}
-              >
-                <Bookmark
-                  size={18}
-                  className={`mr-2 ${
-                    isInLibrary
-                      ? "fill-current"
-                      : ""
-                  }`}
-                />
-
-                {libraryLoading
-                  ? "Memproses..."
-                  : isInLibrary
-                    ? "Hapus dari Rak"
-                    : "Tambah ke Rak"}
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        {/* ===================================================
-            DAFTAR CHAPTER
-        ==================================================== */}
-
-        <div className="mt-10 rounded-xl border border-border bg-card p-5">
-
-          <div className="flex items-center justify-between">
-
-            <div>
-              <h2 className="font-display text-lg font-semibold text-foreground">
-                Daftar Chapter
-              </h2>
-
-              <p className="mt-1 text-xs text-muted-foreground">
-                {chapters.length} chapter diterbitkan
-              </p>
-            </div>
-
-            <BookOpen
-              size={20}
-              className="text-primary"
+              }
             />
-          </div>
+          );
+        }
 
-          {/* BELUM ADA CHAPTER */}
+        // ===========================================================
+        // STATUS
+        // ===========================================================
 
-          {chapters.length === 0 ? (
-            <div className="py-12 text-center">
+        const statusLabel =
+          novel.status ===
+          "ongoing"
+            ? "Ongoing"
+            : novel.status ===
+                "completed"
+              ? "Completed"
+              : novel.status ===
+                  "hiatus"
+                ? "Hiatus"
+                : novel.status ||
+                  "Belum ditentukan";
 
-              <BookOpen
-                size={32}
-                className="mx-auto text-muted-foreground"
+        // ===========================================================
+        // COVER
+        // ===========================================================
+
+        const cover =
+          novel.cover ||
+          "/placeholder.svg";
+
+        // ===========================================================
+        // VIEWS
+        // ===========================================================
+
+        const views =
+          Number(
+            novel.views ?? 0,
+          );
+
+        // ===========================================================
+        // CHAPTER PERTAMA
+        //
+        // Data chapter diambil DESC:
+        //
+        // Chapter 3
+        // Chapter 2
+        // Chapter 1
+        //
+        // Jadi chapter pertama adalah item terakhir.
+        // ===========================================================
+
+        const firstChapter =
+          chapters.length > 0
+            ? chapters[
+                chapters.length - 1
+              ]
+            : null;
+
+        // ===========================================================
+        // RATING DISPLAY
+        // ===========================================================
+
+        const displayedRating =
+          hoverRating ??
+          userRating ??
+          0;
+
+        // ===========================================================
+        // RENDER
+        // ===========================================================
+
+        return (
+          <div className="pb-12">
+
+            {/* =====================================================
+                HERO BACKDROP
+            ====================================================== */}
+
+            <div className="relative h-64 w-full overflow-hidden sm:h-80">
+              <img
+                src={cover}
+                alt={novel.title}
+                className="h-full w-full scale-105 object-cover blur-sm"
               />
 
-              <p className="mt-3 font-medium text-foreground">
-                Belum ada chapter
-              </p>
-
-              <p className="mt-1 text-sm text-muted-foreground">
-                Author belum menerbitkan chapter untuk novel ini.
-              </p>
+              <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/40" />
             </div>
-          ) : (
 
-            /* ADA CHAPTER */
+            <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8">
 
-            <div className="mt-5 space-y-2">
+              {/* ===================================================
+                  KEMBALI
+              ==================================================== */}
 
-              {chapters.map(
-                (chapter) => (
-                  <Link
-                    key={chapter.id}
-                    to={`/read/${chapter.id}`}
-                    className="group flex items-center justify-between rounded-lg border border-border/50 bg-secondary/30 px-4 py-3 transition-colors hover:border-primary/30 hover:bg-secondary/50"
-                  >
+              <Link
+                to="/novel"
+                className="mt-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-primary"
+              >
+                <ArrowLeft
+                  size={16}
+                />
 
-                    <div className="min-w-0">
+                Kembali
+              </Link>
 
-                      <p className="text-sm font-medium text-foreground group-hover:text-primary">
-                        Chapter{" "}
-                        {chapter.chapter_number}
-                      </p>
+              {/* ===================================================
+                  DETAIL NOVEL
+              ==================================================== */}
 
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {chapter.title}
-                      </p>
+              <div className="mt-4 flex flex-col gap-6 sm:flex-row">
 
-                    </div>
+                {/* COVER */}
 
-                    <div className="ml-4 flex shrink-0 items-center gap-3">
+                <div className="mx-auto w-40 shrink-0 overflow-hidden rounded-xl border border-border shadow-xl sm:mx-0 sm:w-48">
+                  <img
+                    src={cover}
+                    alt={novel.title}
+                    className="aspect-[3/4] w-full object-cover"
+                  />
+                </div>
 
-                      <span className="hidden text-xs text-muted-foreground sm:block">
-                        {Number(
-                          chapter.word_count ??
-                            0,
-                        ).toLocaleString(
-                          "id-ID",
-                        )}{" "}
-                        kata
-                      </span>
+                {/* INFO */}
 
-                      <Play
-                        size={15}
-                        className="text-muted-foreground transition-colors group-hover:text-primary"
+                <div className="flex-1 space-y-4">
+
+                  {/* STATUS */}
+
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="secondary">
+                      {statusLabel}
+                    </Badge>
+
+                    {novel.visibility ===
+                      "public" && (
+                      <Badge className="bg-primary text-primary-foreground">
+                        Publik
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* JUDUL */}
+
+                  <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl lg:text-4xl">
+                    {novel.title}
+                  </h1>
+
+                  {/* AUTHOR */}
+
+                  <p className="text-sm text-muted-foreground">
+                    Novel karya{" "}
+                    <span className="font-medium text-foreground">
+                      {author?.display_name ||
+                        author?.username ||
+                        "Author"}
+                    </span>
+                  </p>
+
+                  {/* RATING SUMMARY */}
+
+                  <div className="flex flex-wrap items-center gap-3">
+
+                    <div className="flex items-center gap-1">
+                      <Star
+                        size={18}
+                        className="fill-amber-400 text-amber-400"
                       />
+
+                      <span className="font-semibold text-foreground">
+                        {ratingSummary.average.toFixed(
+                          1,
+                        )}
+                      </span>
                     </div>
 
-                  </Link>
-                ),
-              )}
+                    <span className="text-sm text-muted-foreground">
+                      {ratingSummary.count.toLocaleString(
+                        "id-ID",
+                      )}{" "}
+                      rating
+                    </span>
+                  </div>
 
+                  {/* GENRE */}
+
+                  {genres.length >
+                  0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {genres.map(
+                        (
+                          genre,
+                        ) => (
+                          <span
+                            key={
+                              genre.id
+                            }
+                            className="rounded-lg border border-border bg-card px-3 py-1 text-xs font-medium text-foreground"
+                          >
+                            {
+                              genre.name
+                            }
+                          </span>
+                        ),
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Belum ada genre.
+                    </p>
+                  )}
+
+                  {/* DESKRIPSI */}
+
+                  <p className="max-w-2xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground sm:text-base">
+                    {novel.description ||
+                      "Belum ada deskripsi untuk novel ini."}
+                  </p>
+
+                  {/* STATISTIK */}
+
+                  <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+
+                    <span className="flex items-center gap-1.5">
+                      <Eye
+                        size={16}
+                      />
+
+                      {views.toLocaleString(
+                        "id-ID",
+                      )}{" "}
+                      dibaca
+                    </span>
+
+                    <span className="flex items-center gap-1.5">
+                      <ListOrdered
+                        size={16}
+                      />
+
+                      {chapters.length}{" "}
+                      chapter
+                    </span>
+                  </div>
+
+                  {/* RATING USER */}
+
+                  <div className="rounded-xl border border-border bg-card/50 p-4">
+
+                    <p className="mb-2 text-sm font-medium text-foreground">
+                      {userRating
+                        ? "Rating kamu"
+                        : "Beri rating novel ini"}
+                    </p>
+
+                    <div className="flex items-center gap-1">
+
+                      {Array.from({
+                        length: 5,
+                      }).map(
+                        (
+                          _,
+                          index,
+                        ) => {
+                          const starValue =
+                            index +
+                            1;
+
+                          const active =
+                            starValue <=
+                            displayedRating;
+
+                          return (
+                            <button
+                              key={
+                                starValue
+                              }
+                              type="button"
+                              disabled={
+                                ratingLoading
+                              }
+                              onMouseEnter={() =>
+                                setHoverRating(
+                                  starValue,
+                                )
+                              }
+                              onMouseLeave={() =>
+                                setHoverRating(
+                                  null,
+                                )
+                              }
+                              onClick={() =>
+                                submitRating(
+                                  starValue,
+                                )
+                              }
+                              className="rounded-md p-1 transition-transform hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50"
+                              aria-label={`Beri rating ${starValue} dari 5`}
+                            >
+                              <Star
+                                size={
+                                  24
+                                }
+                                className={
+                                  active
+                                    ? "fill-amber-400 text-amber-400"
+                                    : "fill-muted text-muted-foreground/40"
+                                }
+                              />
+                            </button>
+                          );
+                        },
+                      )}
+
+                      {ratingLoading && (
+                        <Loader2
+                          size={18}
+                          className="ml-2 animate-spin text-primary"
+                        />
+                      )}
+                    </div>
+
+                    {!userRating && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Login diperlukan untuk memberikan rating.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* BUTTON */}
+
+                  <div className="flex flex-wrap gap-3 pt-2">
+
+                    {/* BACA SEKARANG */}
+
+                    {firstChapter ? (
+                      <Button
+                        size="lg"
+                        className="glow-primary"
+                        asChild
+                      >
+                        <Link
+                          to={`/read/${firstChapter.id}`}
+                        >
+                          <Play
+                            size={18}
+                            className="mr-1 fill-white"
+                          />
+
+                          Baca Sekarang
+                        </Link>
+                      </Button>
+                    ) : (
+                      <Button
+                        size="lg"
+                        disabled
+                      >
+                        <Play
+                          size={18}
+                          className="mr-1"
+                        />
+
+                        Belum Ada Chapter
+                      </Button>
+                    )}
+
+                    {/* LANJUTKAN MEMBACA */}
+
+                    {lastReadChapterId && (
+                      <Button
+                        size="lg"
+                        variant="outline"
+                        asChild
+                      >
+                        <Link
+                          to={`/read/${lastReadChapterId}`}
+                        >
+                          <BookOpen
+                            size={18}
+                            className="mr-2"
+                          />
+
+                          Lanjutkan Membaca
+                        </Link>
+                      </Button>
+                    )}
+
+                    {/* TAMBAH / HAPUS RAK */}
+
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      onClick={
+                        toggleLibrary
+                      }
+                      disabled={
+                        libraryLoading
+                      }
+                    >
+                      <Bookmark
+                        size={18}
+                        className={`mr-2 ${
+                          isInLibrary
+                            ? "fill-current"
+                            : ""
+                        }`}
+                      />
+
+                      {libraryLoading
+                        ? "Memproses..."
+                        : isInLibrary
+                          ? "Hapus dari Rak"
+                          : "Tambah ke Rak"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* ===================================================
+                  DAFTAR CHAPTER
+              ==================================================== */}
+
+              <div className="mt-10 rounded-xl border border-border bg-card p-5">
+
+                <div className="flex items-center justify-between">
+
+                  <div>
+                    <h2 className="font-display text-lg font-semibold text-foreground">
+                      Daftar Chapter
+                    </h2>
+
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {
+                        chapters.length
+                      }{" "}
+                      chapter diterbitkan
+                    </p>
+                  </div>
+
+                  <BookOpen
+                    size={20}
+                    className="text-primary"
+                  />
+                </div>
+
+                {/* BELUM ADA CHAPTER */}
+
+                {chapters.length ===
+                0 ? (
+                  <div className="py-12 text-center">
+
+                    <BookOpen
+                      size={32}
+                      className="mx-auto text-muted-foreground"
+                    />
+
+                    <p className="mt-3 font-medium text-foreground">
+                      Belum ada chapter
+                    </p>
+
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Author belum menerbitkan chapter untuk novel ini.
+                    </p>
+                  </div>
+                ) : (
+                  /* ADA CHAPTER */
+
+                  <div className="mt-5 space-y-2">
+
+                    {chapters.map(
+                      (
+                        chapter,
+                      ) => (
+                        <Link
+                          key={
+                            chapter.id
+                          }
+                          to={`/read/${chapter.id}`}
+                          className="group flex items-center justify-between rounded-lg border border-border/50 bg-secondary/30 px-4 py-3 transition-colors hover:border-primary/30 hover:bg-secondary/50"
+                        >
+
+                          <div className="min-w-0">
+
+                            <p className="text-sm font-medium text-foreground group-hover:text-primary">
+                              Chapter{" "}
+                              {
+                                chapter.chapter_number
+                              }
+                            </p>
+
+                            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                              {
+                                chapter.title
+                              }
+                            </p>
+
+                          </div>
+
+                          <div className="ml-4 flex shrink-0 items-center gap-3">
+
+                            <span className="hidden text-xs text-muted-foreground sm:block">
+                              {Number(
+                                chapter.word_count ??
+                                  0,
+                              ).toLocaleString(
+                                "id-ID",
+                              )}{" "}
+                              kata
+                            </span>
+
+                            <Play
+                              size={
+                                15
+                              }
+                              className="text-muted-foreground transition-colors group-hover:text-primary"
+                            />
+                          </div>
+
+                        </Link>
+                      ),
+                    )}
+
+                  </div>
+                )}
+              </div>
             </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+          </div>
+        );
+      }
