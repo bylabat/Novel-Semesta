@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase';
 import type { Novel } from '@/types';
 
 import { NovelCard } from '@/components/NovelCard';
-import { SearchBar } from '@/components/SearchBar';
+
 import { EmptyState } from '@/components/EmptyState';
 import { Button } from '@/components/ui/button';
 
@@ -20,12 +20,6 @@ const statusFilters = [
 ] as const;
 
 type StatusFilter = (typeof statusFilters)[number];
-type SortOption =
-  | 'terbaru'
-  | 'views'
-  | 'rating'
-  | 'az'
-  | 'za';
 
 interface SupabaseNovel {
   id: string;
@@ -468,20 +462,12 @@ export default function NovelPage() {
           </h1>
         </div>
 
-        {/* ===================================================
-            SEARCH + FILTER
-        ==================================================== */}
+            {/* ===================================================
+                FILTER
+            ==================================================== */}
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="flex-1">
-            <SearchBar
-              placeholder="Cari novel atau author..."
-              onSubmit={setSearch}
-              className="max-w-md"
-            />
-          </div>
-
-          <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
             <Button
               type="button"
               variant="outline"
