@@ -59,12 +59,59 @@ export default function ReadChapterPage() {
 
   const latestProgressRef = useRef(0);
 
+  const restoreProgressRef = useRef(false);
+
+  // Menyimpan chapter dan novel yang sedang aktif.
+  // Berguna ketika melakukan save progress saat halaman ditinggalkan.
+  const currentChapterRef =
+    useRef<Chapter | null>(null);
+
+  const currentNovelRef =
+    useRef<Novel | null>(null);
+
+  // ===========================================================
+  // CEK MODE "LANJUT MEMBACA"
+  // ===========================================================
+
+  useEffect(() => {
+    if (!chapterId) return;
+
+    const restoreKey =
+      `restore_reading_progress_${chapterId}`;
+
+    const shouldRestore =
+      sessionStorage.getItem(restoreKey) === "true";
+
+    restoreProgressRef.current =
+      shouldRestore;
+
+    if (shouldRestore) {
+      sessionStorage.removeItem(
+        restoreKey,
+      );
+    }
+  }, [chapterId]);
+
   // ===========================================================
   // SIMPAN PROGRESS KE SUPABASE
   // ===========================================================
 
-  async function saveReadingProgress(progressValue: number) {
-    if (!chapter || !novel) return;
+  async function saveReadingProgress(
+    progressValue: number,
+    chapterOverride?: Chapter | null,
+    novelOverride?: Novel | null,
+  ) {
+    const currentChapter =
+      chapterOverride ??
+      currentChapterRef.current;
+
+    const currentNovel =
+      novelOverride ??
+      currentNovelRef.current;
+
+    if (!currentChapter || !currentNovel) {
+      return;
+    }
 
     try {
       const {
@@ -74,7 +121,7 @@ export default function ReadChapterPage() {
 
       if (userError) {
         console.error(
-          "Gagal mendapatkan user untuk progress:",
+          "Gagal mendapatkan user:",
           userError,
         );
         return;
@@ -84,60 +131,78 @@ export default function ReadChapterPage() {
 
       const progress = Math.max(
         0,
-        Math.min(100, Math.round(progressValue)),
+        Math.min(
+          100,
+          Math.round(progressValue),
+        ),
       );
 
-      const { error: progressError } = await supabase
-        .from("reading_progress")
-        .upsert(
-          {
-            user_id: user.id,
-            novel_id: novel.id,
-            chapter_id: chapter.id,
-            progress,
-            updated_at: new Date().toISOString(),
-          },
-          {
-            onConflict: "user_id,chapter_id",
-          },
-        );
+      const { error: progressError } =
+        await supabase
+          .from("reading_progress")
+          .upsert(
+            {
+              user_id: user.id,
+              novel_id: currentNovel.id,
+              chapter_id: currentChapter.id,
+              progress,
+              updated_at:
+                new Date().toISOString(),
+            },
+            {
+              onConflict:
+                "user_id,chapter_id",
+            },
+          );
 
       if (progressError) {
         console.error(
-          "Gagal menyimpan progress membaca:",
+          "Gagal menyimpan progress:",
           progressError,
         );
       }
     } catch (err) {
       console.error(
-        "Kesalahan saat menyimpan progress membaca:",
+        "Kesalahan saat menyimpan progress:",
         err,
       );
     }
   }
 
   // ===========================================================
-  // RESET SCROLL SAAT PINDAH CHAPTER
+  // RESET SCROLL SAAT CHAPTER BERUBAH
   // ===========================================================
 
   useEffect(() => {
     if (!chapterId) return;
 
-    window.scrollTo({
-      top: 0,
-      behavior: "auto",
-    });
+    /*
+     * Chapter baru selalu mulai dari atas,
+     * kecuali dibuka melalui tombol "Lanjut Membaca".
+     */
+    if (!restoreProgressRef.current) {
+      window.scrollTo({
+        top: 0,
+        behavior: "auto",
+      });
 
-    setReadingProgress(0);
-    latestProgressRef.current = 0;
+      setReadingProgress(0);
+      latestProgressRef.current = 0;
+    }
   }, [chapterId]);
 
   // ===========================================================
-  // HITUNG & SIMPAN PROGRESS SCROLL
+  // HITUNG DAN SIMPAN PROGRESS SCROLL
   // ===========================================================
 
   useEffect(() => {
     if (!chapter || !novel) return;
+
+    currentChapterRef.current =
+      chapter;
+
+    currentNovelRef.current =
+      novel;
 
     function handleScroll() {
       const documentHeight =
@@ -149,14 +214,15 @@ export default function ReadChapterPage() {
       const scrollableHeight =
         documentHeight - windowHeight;
 
-      // Jika isi chapter tidak cukup panjang
-      // untuk di-scroll, anggap sudah 100%.
       if (scrollableHeight <= 0) {
         latestProgressRef.current = 100;
+
         setReadingProgress(100);
 
         if (saveTimerRef.current) {
-          clearTimeout(saveTimerRef.current);
+          clearTimeout(
+            saveTimerRef.current,
+          );
         }
 
         saveTimerRef.current =
@@ -172,7 +238,9 @@ export default function ReadChapterPage() {
         document.documentElement.scrollTop;
 
       const progress =
-        (scrollTop / scrollableHeight) * 100;
+        (scrollTop /
+          scrollableHeight) *
+        100;
 
       const roundedProgress =
         Math.max(
@@ -210,8 +278,16 @@ export default function ReadChapterPage() {
       { passive: true },
     );
 
-    // Hitung posisi awal.
-    handleScroll();
+    // Jangan langsung menyimpan 0%
+    // ketika chapter baru saja dibuka.
+    if (
+      restoreProgressRef.current
+    ) {
+      handleScroll();
+    } else {
+      setReadingProgress(0);
+      latestProgressRef.current = 0;
+    }
 
     return () => {
       window.removeEventListener(
@@ -227,10 +303,13 @@ export default function ReadChapterPage() {
         saveTimerRef.current = null;
       }
 
-      // Simpan progress terakhir
-      // ketika user meninggalkan chapter.
+      /*
+       * Simpan posisi terakhir secara asynchronous.
+       */
       void saveReadingProgress(
         latestProgressRef.current,
+        chapter,
+        novel,
       );
     };
   }, [chapter, novel]);
@@ -256,9 +335,16 @@ export default function ReadChapterPage() {
       setLoading(true);
       setError("");
 
+      /*
+       * Reset state lama supaya tidak terlihat
+       * sebentar ketika pindah chapter.
+       */
+      setPreviousChapter(null);
+      setNextChapter(null);
+
       try {
         // =====================================================
-        // 1. AMBIL CHAPTER
+        // 1. AMBIL CHAPTER UTAMA
         // =====================================================
 
         const {
@@ -303,39 +389,47 @@ export default function ReadChapterPage() {
         const currentChapter =
           chapterData as Chapter;
 
-        setChapter(
-          currentChapter,
-        );
-
-        // Simpan chapter terakhir yang dibuka.
-        localStorage.setItem(
-          `last_read_chapter_${currentChapter.novel_id}`,
-          currentChapter.id,
-        );
-
         // =====================================================
-        // 2. AMBIL NOVEL
+        // 2. AMBIL DATA NOVEL
         // =====================================================
+
+        const novelPromise =
+          supabase
+            .from("novels")
+            .select(
+              "id, title, cover",
+            )
+            .eq(
+              "id",
+              currentChapter.novel_id,
+            )
+            .eq(
+              "visibility",
+              "public",
+            )
+            .maybeSingle();
+
+        /*
+         * Jalankan user request bersamaan
+         * dengan request novel.
+         */
+        const userPromise =
+          supabase.auth.getUser();
+
+        const [
+          novelResult,
+          userResult,
+        ] = await Promise.all([
+          novelPromise,
+          userPromise,
+        ]);
+
+        if (cancelled) return;
 
         const {
           data: novelData,
           error: novelError,
-        } = await supabase
-          .from("novels")
-          .select(
-            "id, title, cover",
-          )
-          .eq(
-            "id",
-            currentChapter.novel_id,
-          )
-          .eq(
-            "visibility",
-            "public",
-          )
-          .maybeSingle();
-
-        if (cancelled) return;
+        } = novelResult;
 
         if (novelError) {
           console.error(
@@ -365,55 +459,107 @@ export default function ReadChapterPage() {
         const currentNovel =
           novelData as Novel;
 
-        setNovel(currentNovel);
-
-        
-
         // =====================================================
-        // 3. AMBIL USER + PROGRESS
+        // 3. TAMPILKAN CHAPTER SECEPATNYA
         // =====================================================
 
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+        setChapter(
+          currentChapter,
+        );
 
-        if (cancelled) return;
+        setNovel(
+          currentNovel,
+        );
 
-        if (user) {
-          const {
-            data: progressData,
-            error: progressError,
-          } = await supabase
-            .from(
-              "reading_progress",
-            )
-            .select(
-              "user_id, novel_id, chapter_id, progress, updated_at",
-            )
-            .eq(
-              "user_id",
-              user.id,
-            )
-            .eq(
-              "novel_id",
-              currentNovel.id,
-            )
-            .eq(
-              "chapter_id",
-              currentChapter.id,
-            )
-            .maybeSingle();
+        currentChapterRef.current =
+          currentChapter;
 
-          if (cancelled) return;
+        currentNovelRef.current =
+          currentNovel;
 
-          if (progressError) {
-            console.error(
-              "Gagal mengambil progress membaca:",
-              progressError,
-            );
-          } else if (
-            progressData
-          ) {
+        localStorage.setItem(
+          `last_read_chapter_${currentChapter.novel_id}`,
+          currentChapter.id,
+        );
+
+        /*
+         * Sangat penting:
+         *
+         * Kita tidak menunggu reading_progress,
+         * views, dan navigasi sebelum menampilkan
+         * chapter.
+         */
+        setLoading(false);
+
+        // =====================================================
+        // 4. RESET KE ATAS UNTUK CHAPTER BARU
+        // =====================================================
+
+        if (!restoreProgressRef.current) {
+          setReadingProgress(0);
+
+          latestProgressRef.current = 0;
+
+          requestAnimationFrame(() => {
+            window.scrollTo({
+              top: 0,
+              behavior: "auto",
+            });
+          });
+        }
+
+        // =====================================================
+        // 5. READING PROGRESS
+        //    BERJALAN DI BELAKANG
+        // =====================================================
+
+        const user =
+          userResult.data.user;
+
+        if (
+          user &&
+          restoreProgressRef.current
+        ) {
+          void (async () => {
+            const {
+              data: progressData,
+              error: progressError,
+            } = await supabase
+              .from(
+                "reading_progress",
+              )
+              .select(
+                "user_id, novel_id, chapter_id, progress, updated_at",
+              )
+              .eq(
+                "user_id",
+                user.id,
+              )
+              .eq(
+                "novel_id",
+                currentNovel.id,
+              )
+              .eq(
+                "chapter_id",
+                currentChapter.id,
+              )
+              .maybeSingle();
+
+            if (cancelled) return;
+
+            if (progressError) {
+              console.error(
+                "Gagal mengambil progress:",
+                progressError,
+              );
+
+              return;
+            }
+
+            if (!progressData) {
+              return;
+            }
+
             const savedProgress =
               Math.max(
                 0,
@@ -434,8 +580,10 @@ export default function ReadChapterPage() {
             latestProgressRef.current =
               savedProgress;
 
-            // Tunggu browser selesai
-            // merender isi chapter.
+            /*
+             * Tunggu rendering selesai,
+             * kemudian pulihkan posisi.
+             */
             setTimeout(() => {
               if (cancelled) return;
 
@@ -461,33 +609,107 @@ export default function ReadChapterPage() {
                   behavior:
                     "auto",
                 });
-              } else if (
-                savedProgress >=
-                100
-              ) {
-                window.scrollTo({
-                  top: 0,
-                  behavior:
-                    "auto",
-                });
               }
-            }, 300);
-          }
+            }, 100);
+          })();
         }
 
         // =====================================================
-        // 4. TAMBAH VIEWS
+        // 6. NAVIGASI CHAPTER
+        //    BERJALAN DI BELAKANG
         // =====================================================
 
-        const viewKey =
-          `novel_view_${currentChapter.id}`;
+        void (async () => {
+          const {
+            data:
+              publishedChapters,
+            error:
+              navigationError,
+          } = await supabase
+            .from("chapters")
+            .select(
+              "id, novel_id, title, chapter_number, content, published, word_count",
+            )
+            .eq(
+              "novel_id",
+              currentChapter.novel_id,
+            )
+            .eq(
+              "published",
+              true,
+            )
+            .order(
+              "chapter_number",
+              {
+                ascending: true,
+              },
+            );
 
-        const alreadyViewed =
-          sessionStorage.getItem(
-            viewKey,
+          if (cancelled) return;
+
+          if (navigationError) {
+            console.error(
+              "Gagal mengambil navigasi chapter:",
+              navigationError,
+            );
+
+            return;
+          }
+
+          const allPublishedChapters =
+            (publishedChapters ??
+              []) as Chapter[];
+
+          const currentIndex =
+            allPublishedChapters.findIndex(
+              (item) =>
+                item.id ===
+                currentChapter.id,
+            );
+
+          if (
+            currentIndex === -1
+          ) {
+            return;
+          }
+
+          setPreviousChapter(
+            currentIndex > 0
+              ? allPublishedChapters[
+                  currentIndex - 1
+                ]
+              : null,
           );
 
-        if (!alreadyViewed) {
+          setNextChapter(
+            currentIndex <
+              allPublishedChapters.length -
+                1
+              ? allPublishedChapters[
+                  currentIndex + 1
+                ]
+              : null,
+          );
+        })();
+
+        // =====================================================
+        // 7. TAMBAH VIEWS
+        //    BERJALAN DI BELAKANG
+        // =====================================================
+
+        void (async () => {
+          const viewKey =
+            `novel_view_${currentChapter.id}`;
+
+          const alreadyViewed =
+            sessionStorage.getItem(
+              viewKey,
+            );
+
+          if (alreadyViewed) {
+            return;
+          }
+
           const {
             data: currentNovelStats,
             error: viewsReadError,
@@ -504,136 +726,51 @@ export default function ReadChapterPage() {
 
           if (viewsReadError) {
             console.error(
-              "Gagal membaca views novel:",
+              "Gagal membaca views:",
               viewsReadError,
             );
-          } else if (
-            currentNovelStats
-          ) {
-            const currentViews =
-              Number(
-                currentNovelStats.views ??
-                  0,
-              );
 
-            const {
-              error:
-                viewsUpdateError,
-            } = await supabase
-              .from("novels")
-              .update({
-                views:
-                  currentViews + 1,
-              })
-              .eq(
-                "id",
-                currentNovel.id,
-              );
-
-            if (viewsUpdateError) {
-              console.error(
-                "Gagal menambahkan views:",
-                viewsUpdateError,
-              );
-            } else {
-              sessionStorage.setItem(
-                viewKey,
-                "true",
-              );
-            }
+            return;
           }
-        }
 
-        // =====================================================
-        // 5. AMBIL CHAPTER UNTUK NAVIGASI
-        // =====================================================
-
-        const {
-          data:
-            publishedChapters,
-          error:
-            navigationError,
-        } = await supabase
-          .from("chapters")
-          .select(
-            "id, novel_id, title, chapter_number, content, published, word_count",
-          )
-          .eq(
-            "novel_id",
-            currentChapter.novel_id,
-          )
-          .eq(
-            "published",
-            true,
-          )
-          .order(
-            "chapter_number",
-            {
-              ascending: true,
-            },
-          );
-
-        if (cancelled) return;
-
-        if (navigationError) {
-          console.error(
-            "Gagal mengambil navigasi chapter:",
-            navigationError,
-          );
-
-          setPreviousChapter(
-            null,
-          );
-
-          setNextChapter(null);
-        } else {
-          const allPublishedChapters =
-            (publishedChapters ??
-              []) as Chapter[];
-
-          const currentIndex =
-            allPublishedChapters.findIndex(
-              (item) =>
-                item.id ===
-                currentChapter.id,
-            );
-
-          if (
-            currentIndex === -1
-          ) {
-            setPreviousChapter(
-              null,
-            );
-
-            setNextChapter(
-              null,
-            );
-          } else {
-            setPreviousChapter(
-              currentIndex > 0
-                ? allPublishedChapters[
-                    currentIndex -
-                      1
-                  ]
-                : null,
-            );
-
-            setNextChapter(
-              currentIndex <
-                allPublishedChapters.length -
-                  1
-                ? allPublishedChapters[
-                    currentIndex +
-                      1
-                  ]
-                : null,
-            );
+          if (!currentNovelStats) {
+            return;
           }
-        }
 
-        if (!cancelled) {
-          setLoading(false);
-        }
+          const currentViews =
+            Number(
+              currentNovelStats.views ??
+                0,
+            );
+
+          const {
+            error:
+              viewsUpdateError,
+          } = await supabase
+            .from("novels")
+            .update({
+              views:
+                currentViews + 1,
+            })
+            .eq(
+              "id",
+              currentNovel.id,
+            );
+
+          if (viewsUpdateError) {
+            console.error(
+              "Gagal menambahkan views:",
+              viewsUpdateError,
+            );
+
+            return;
+          }
+
+          sessionStorage.setItem(
+            viewKey,
+            "true",
+          );
+        })();
       } catch (err) {
         console.error(
           "Kesalahan saat membuka chapter:",
@@ -793,7 +930,6 @@ export default function ReadChapterPage() {
               {novel.title}
             </span>
           </div>
-
         </header>
 
         {/* ===================================================
@@ -830,11 +966,24 @@ export default function ReadChapterPage() {
               {previousChapter && (
                 <Button
                   variant="outline"
-                  onClick={() =>
+                  onClick={() => {
+                    restoreProgressRef.current =
+                      false;
+
+                    setReadingProgress(0);
+
+                    latestProgressRef.current =
+                      0;
+
+                    window.scrollTo({
+                      top: 0,
+                      behavior: "auto",
+                    });
+
                     navigate(
                       `/read/${previousChapter.id}`,
-                    )
-                  }
+                    );
+                  }}
                 >
                   <ChevronLeft
                     size={17}
@@ -872,11 +1021,24 @@ export default function ReadChapterPage() {
               {nextChapter && (
                 <Button
                   className="glow-primary-sm"
-                  onClick={() =>
+                  onClick={() => {
+                    restoreProgressRef.current =
+                      false;
+
+                    setReadingProgress(0);
+
+                    latestProgressRef.current =
+                      0;
+
+                    window.scrollTo({
+                      top: 0,
+                      behavior: "auto",
+                    });
+
                     navigate(
                       `/read/${nextChapter.id}`,
-                    )
-                  }
+                    );
+                  }}
                 >
                   Berikutnya
 
