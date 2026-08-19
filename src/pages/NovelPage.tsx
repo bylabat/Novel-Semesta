@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { BookOpen, SlidersHorizontal } from 'lucide-react';
-
+import {
+  BookOpen,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { Novel } from '@/types';
 
@@ -18,6 +20,12 @@ const statusFilters = [
 ] as const;
 
 type StatusFilter = (typeof statusFilters)[number];
+type SortOption =
+  | 'terbaru'
+  | 'views'
+  | 'rating'
+  | 'az'
+  | 'za';
 
 interface SupabaseNovel {
   id: string;
@@ -53,6 +61,19 @@ export default function NovelPage() {
 
   const [search, setSearch] = useState(query);
   const [status, setStatus] = useState<StatusFilter>('Semua');
+  
+  type SortOption =
+    | 'terbaru'
+    | 'views'
+    | 'rating'
+    | 'az'
+    | 'za';
+
+  const [sortBy, setSortBy] =
+    useState<SortOption>('terbaru');
+
+  const [showSort, setShowSort] =
+    useState(false);
 
   const [novels, setNovels] = useState<Novel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -346,7 +367,8 @@ export default function NovelPage() {
   // SEARCH + FILTER
   // ===========================================================
 
-  const filtered = novels.filter((novel) => {
+  const filtered = novels
+  .filter((novel) => {
     const searchText = search.toLowerCase().trim();
 
     const matchSearch =
@@ -363,6 +385,34 @@ export default function NovelPage() {
       novel.status === status;
 
     return matchSearch && matchStatus;
+  })
+  .sort((a, b) => {
+    switch (sortBy) {
+      case 'views':
+        return (
+          Number(b.views.replace(/\./g, '')) -
+          Number(a.views.replace(/\./g, ''))
+        );
+
+      case 'rating':
+        return b.rating - a.rating;
+
+      case 'az':
+        return a.title.localeCompare(
+          b.title,
+          'id-ID'
+        );
+
+      case 'za':
+        return b.title.localeCompare(
+          a.title,
+          'id-ID'
+        );
+
+      case 'terbaru':
+      default:
+        return 0;
+    }
   });
 
   // ===========================================================
@@ -432,10 +482,18 @@ export default function NovelPage() {
           </div>
 
           <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
-            <SlidersHorizontal
-              size={16}
-              className="shrink-0 text-muted-foreground"
-            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() => setShowSort((value) => !value)}
+            >
+              <SlidersHorizontal size={16} />
+              <span className="hidden sm:inline">
+                Urutkan
+              </span>
+            </Button>
 
             {statusFilters.map((filter) => (
               <Button
@@ -453,6 +511,40 @@ export default function NovelPage() {
               </Button>
             ))}
           </div>
+          {showSort && (
+            <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">
+                Urutkan novel
+              </p>
+
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ['terbaru', 'Terbaru'],
+                  ['views', 'Paling banyak dilihat'],
+                  ['rating', 'Rating tertinggi'],
+                  ['az', 'Judul A–Z'],
+                  ['za', 'Judul Z–A'],
+                ].map(([value, label]) => (
+                  <Button
+                    key={value}
+                    type="button"
+                    size="sm"
+                    variant={
+                      sortBy === value
+                        ? 'default'
+                        : 'outline'
+                    }
+                    onClick={() => {
+                      setSortBy(value as SortOption);
+                      setShowSort(false);
+                    }}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
