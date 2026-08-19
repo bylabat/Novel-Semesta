@@ -39,8 +39,12 @@ export function Navbar() {
   const {
     user,
     profile,
+    session,
     signOut,
   } = useAuth();
+  <div className="fixed bottom-4 left-4 z-[99999] rounded-lg bg-black p-3 text-xs text-white">
+     | user: {user ? 'ADA' : 'KOSONG'} | profile: {profile ? 'ADA' : 'KOSONG'}
+  </div>
 
   const [scrolled, setScrolled] =
     useState(false);
