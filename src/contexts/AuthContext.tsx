@@ -117,7 +117,7 @@ export function AuthProvider({
     let mounted = true;
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      console.log('GOOGLE/INITIAL SESSION:', session);
+    
       if (!mounted) return;
 
       setSession(session);
@@ -139,7 +139,7 @@ export function AuthProvider({
     } =
       supabase.auth.onAuthStateChange(
         (_event, session) => {
-          console.log('AUTH EVENT:', _event, session);
+        
           if (!mounted) return;
 
           setSession(session);
