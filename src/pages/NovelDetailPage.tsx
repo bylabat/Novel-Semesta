@@ -12,6 +12,7 @@
       } from "lucide-react";
 
       import { supabase } from "@/lib/supabase";
+      import { useAuth } from "@/contexts/AuthContext";
       import { Badge } from "@/components/ui/badge";
       import { Button } from "@/components/ui/button";
       import { EmptyState } from "@/components/EmptyState";
@@ -64,8 +65,9 @@
         updated_at: string;
       }
 
-      export default function NovelDetailPage() {
-        const { id } = useParams<{ id: string }>();
+        export default function NovelDetailPage() {
+          const { id } = useParams<{ id: string }>();
+          const { user: currentUser } = useAuth();
 
         const [novel, setNovel] = useState<Novel | null>(null);
         const [author, setAuthor] = useState<Author | null>(null);
@@ -985,6 +987,8 @@
           Number(
             novel.views ?? 0,
           );
+          const isOwner =
+            currentUser?.id === novel.author_id;
 
         // ===========================================================
         // CHAPTER PERTAMA
@@ -1327,6 +1331,21 @@
                           />
 
                           Lanjutkan Membaca
+                        </Link>
+                      </Button>
+                    )}
+                    {/* EDIT NOVEL */}
+
+                    {isOwner && (
+                      <Button
+                        size="lg"
+                        variant="outline"
+                        asChild
+                      >
+                        <Link
+                          to={`/author/edit-novel/${novel.id}`}
+                        >
+                          Edit Novel
                         </Link>
                       </Button>
                     )}

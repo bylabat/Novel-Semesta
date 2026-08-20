@@ -575,7 +575,9 @@ export default function EditNovelPage() {
             )}
 
             {/* BUTTONS */}
-            <div className="flex flex-col gap-3 pt-2 sm:flex-row">
+            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:flex-wrap">
+
+              {/* SIMPAN PERUBAHAN */}
               <Button
                 type="submit"
                 disabled={saving || uploadingCover}
@@ -587,7 +589,10 @@ export default function EditNovelPage() {
                     className="mr-2 animate-spin"
                   />
                 ) : (
-                  <Save size={17} className="mr-2" />
+                  <Save
+                    size={17}
+                    className="mr-2"
+                  />
                 )}
 
                 {uploadingCover
@@ -597,6 +602,26 @@ export default function EditNovelPage() {
                     : 'Simpan Perubahan'}
               </Button>
 
+              {/* KELOLA CHAPTER */}
+              <Button
+                type="button"
+                variant="outline"
+                disabled={saving || uploadingCover}
+                onClick={() =>
+                  navigate(
+                    `/author/manage-chapters/${id}`
+                  )
+                }
+              >
+                <BookOpen
+                  size={17}
+                  className="mr-2"
+                />
+
+                Kelola Chapter
+              </Button>
+
+              {/* BATAL */}
               <Button
                 type="button"
                 variant="outline"
@@ -607,6 +632,7 @@ export default function EditNovelPage() {
               >
                 Batal
               </Button>
+
             </div>
           </div>
         </form>

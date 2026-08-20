@@ -80,33 +80,190 @@ export function AuthProvider({
     useState(true);
 
   // ==========================================================
-  // FETCH PROFILE
+  // CREATE PROFILE IF MISSING
+  // ==========================================================
+
+  const ensureProfile = useCallback(
+    async (authUser: User) => {
+      try {
+        // ------------------------------------------------------
+        // CHECK EXISTING PROFILE
+        // ------------------------------------------------------
+
+        const {
+          data: existingProfile,
+          error: fetchError,
+        } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authUser.id)
+          .maybeSingle();
+
+        if (fetchError) {
+          console.error(
+            'Error fetching profile:',
+            fetchError
+          );
+
+          return null;
+        }
+
+        // ------------------------------------------------------
+        // PROFILE SUDAH ADA
+        // ------------------------------------------------------
+
+        if (existingProfile) {
+          setProfile(
+            existingProfile as Profile
+          );
+
+          return existingProfile as Profile;
+        }
+
+        // ------------------------------------------------------
+        // DATA DASAR USER
+        // ------------------------------------------------------
+
+        const metadata =
+          authUser.user_metadata ?? {};
+
+        const email =
+          authUser.email ?? '';
+
+        const metadataUsername =
+          typeof metadata.username ===
+          'string'
+            ? metadata.username
+            : '';
+
+        const metadataDisplayName =
+          typeof metadata.display_name ===
+          'string'
+            ? metadata.display_name
+            : '';
+
+        /*
+         * Untuk Google OAuth atau user yang belum
+         * mempunyai username dari metadata, gunakan
+         * bagian sebelum @ sebagai username dasar.
+         */
+        let username =
+          metadataUsername.trim();
+
+        if (!username) {
+          username =
+            email
+              .split('@')[0]
+              .toLowerCase()
+              .replace(
+                /[^a-z0-9_]/g,
+                ''
+              )
+              .slice(0, 30);
+        }
+
+        if (!username) {
+          username = `user_${authUser.id.slice(
+            0,
+            8
+          )}`;
+        }
+
+        const displayName =
+          metadataDisplayName.trim() ||
+          username;
+
+        // ------------------------------------------------------
+        // CREATE PROFILE
+        // ------------------------------------------------------
+
+        const {
+          data: newProfile,
+          error: insertError,
+        } = await supabase
+          .from('profiles')
+          .insert({
+            id: authUser.id,
+            username,
+            email,
+            display_name:
+              displayName,
+            avatar:
+              typeof metadata.avatar_url ===
+              'string'
+                ? metadata.avatar_url
+                : null,
+            bio: null,
+            role: 'reader',
+          })
+          .select('*')
+          .single();
+
+        if (insertError) {
+          console.error(
+            'Error creating profile:',
+            insertError
+          );
+
+          return null;
+        }
+
+        const createdProfile =
+          newProfile as Profile;
+
+        setProfile(createdProfile);
+
+        return createdProfile;
+      } catch (error) {
+        console.error(
+          'Unexpected error ensuring profile:',
+          error
+        );
+
+        return null;
+      }
+    },
+    []
+  );
+
+  // ==========================================================
+  // FETCH / ENSURE PROFILE
   // ==========================================================
 
   const fetchProfile = useCallback(
     async (userId: string) => {
-      const {
-        data,
-        error,
-      } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
+      try {
+        const {
+          data: authUserData,
+        } =
+          await supabase.auth.getUser();
 
-      if (error) {
+        const authUser =
+          authUserData.user;
+
+        if (
+          !authUser ||
+          authUser.id !== userId
+        ) {
+          setProfile(null);
+          return null;
+        }
+
+        return await ensureProfile(
+          authUser
+        );
+      } catch (error) {
         console.error(
           'Error fetching profile:',
           error
         );
-        return;
-      }
 
-      setProfile(
-        data as Profile | null
-      );
+        setProfile(null);
+
+        return null;
+      }
     },
-    []
+    [ensureProfile]
   );
 
   // ==========================================================
@@ -116,59 +273,89 @@ export function AuthProvider({
   useEffect(() => {
     let mounted = true;
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-    
-      if (!mounted) return;
+    async function initializeAuth() {
+      try {
+        const {
+          data: {
+            session: currentSession,
+          },
+        } =
+          await supabase.auth.getSession();
 
-      setSession(session);
-      setUser(session?.user ?? null);
+        if (!mounted) return;
 
-      if (session?.user) {
-        await fetchProfile(session.user.id);
-      } else {
-        setProfile(null);
+        setSession(
+          currentSession
+        );
+
+        setUser(
+          currentSession?.user ?? null
+        );
+
+        if (currentSession?.user) {
+          await fetchProfile(
+            currentSession.user.id
+          );
+        } else {
+          setProfile(null);
+        }
+      } catch (error) {
+        console.error(
+          'Auth initialization error:',
+          error
+        );
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
       }
+    }
 
-      if (mounted) {
-        setLoading(false);
-      }
-    });
+    initializeAuth();
 
     const {
-      data: { subscription },
+      data: {
+        subscription,
+      },
     } =
       supabase.auth.onAuthStateChange(
-        (_event, session) => {
-        
+        (_event, newSession) => {
           if (!mounted) return;
 
-          setSession(session);
-          setUser(session?.user ?? null);
+          setSession(newSession);
 
-          if (!session?.user) {
+          setUser(
+            newSession?.user ?? null
+          );
+
+          if (!newSession?.user) {
             setProfile(null);
             setLoading(false);
             return;
           }
 
-          // Jangan await fetchProfile di dalam callback auth.
+          /*
+           * Jangan menjalankan query Supabase langsung
+           * secara await di dalam callback auth.
+           */
           setTimeout(() => {
             if (!mounted) return;
 
-            fetchProfile(session.user.id)
-              .finally(() => {
-                if (mounted) {
-                  setLoading(false);
-                }
-              });
+            fetchProfile(
+              newSession.user.id
+            ).finally(() => {
+              if (mounted) {
+                setLoading(false);
+              }
+            });
           }, 0);
         }
       );
 
-      return () => {
-        mounted = false;
-        subscription.unsubscribe();
-      };
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, [fetchProfile]);
 
   // ==========================================================
@@ -204,27 +391,67 @@ export function AuthProvider({
         };
       }
 
-      // Update profile yang dibuat oleh trigger
+      /*
+       * Jika Supabase langsung memberikan session/user,
+       * pastikan profile dibuat.
+       */
       if (data.user) {
         const {
-          error: updateError,
+          data: existingProfile,
         } = await supabase
           .from('profiles')
-          .update({
-            username,
-            display_name:
-              displayName,
-          })
+          .select('id')
           .eq(
             'id',
             data.user.id
-          );
+          )
+          .maybeSingle();
 
-        if (updateError) {
-          console.error(
-            'Failed to update profile:',
-            updateError
-          );
+        if (!existingProfile) {
+          const {
+            error: profileError,
+          } =
+            await supabase
+              .from('profiles')
+              .insert({
+                id: data.user.id,
+                username,
+                email,
+                display_name:
+                  displayName,
+                avatar: null,
+                bio: null,
+                role: 'reader',
+              });
+
+          if (profileError) {
+            console.error(
+              'Failed to create profile:',
+              profileError
+            );
+          }
+        } else {
+          const {
+            error: updateError,
+          } =
+            await supabase
+              .from('profiles')
+              .update({
+                username,
+                display_name:
+                  displayName,
+              })
+              .eq(
+                'id',
+                data.user.id
+              );
+
+          if (updateError) {
+            console.error(
+              'Failed to update profile:',
+              updateError
+            );
+          }
         }
       }
 
@@ -248,7 +475,10 @@ export function AuthProvider({
         identifier.includes('@');
 
       if (isEmail) {
-        const { error } =
+        const {
+          data,
+          error,
+        } =
           await supabase.auth.signInWithPassword(
             {
               email: identifier,
@@ -256,13 +486,30 @@ export function AuthProvider({
             }
           );
 
+        if (error) {
+          return {
+            error: error.message,
+          };
+        }
+
+        /*
+         * Pastikan profile tersedia.
+         */
+        if (data.user) {
+          await fetchProfile(
+            data.user.id
+          );
+        }
+
         return {
-          error:
-            error?.message ?? null,
+          error: null,
         };
       }
 
-      // Login menggunakan username
+      // ======================================================
+      // LOGIN MENGGUNAKAN USERNAME
+      // ======================================================
+
       const {
         data: profileData,
         error: profileError,
@@ -286,7 +533,10 @@ export function AuthProvider({
         };
       }
 
-      const { error } =
+      const {
+        data,
+        error,
+      } =
         await supabase.auth.signInWithPassword(
           {
             email:
@@ -295,16 +545,27 @@ export function AuthProvider({
           }
         );
 
+      if (error) {
+        return {
+          error: error.message,
+        };
+      }
+
+      if (data.user) {
+        await fetchProfile(
+          data.user.id
+        );
+      }
+
       return {
-        error:
-          error?.message ?? null,
+        error: null,
       };
     },
-    []
+    [fetchProfile]
   );
 
   // ==========================================================
-  // SIGN IN WITH GOOGLE
+  // GOOGLE LOGIN
   // ==========================================================
 
   const signInWithGoogle =
@@ -317,7 +578,7 @@ export function AuthProvider({
             provider: 'google',
             options: {
               redirectTo:
-              'https://2a83c6f2-56c9-4fe2-9dde-46786d7b9c29-00-18mh8tk036uyj.pike.replit.dev',
+                'https://2a83c6f2-56c9-4fe2-9dde-46786d7b9c29-00-18mh8tk036uyj.pike.replit.dev',
             },
           }
         );

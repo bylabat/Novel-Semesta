@@ -7,13 +7,19 @@ import {
   UserPlus,
   Loader2,
   Calendar,
+  UserRound,
+  PenLine,
+  Sparkles,
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+
 import { Button } from '@/components/ui/button';
 import { NovelCard } from '@/components/NovelCard';
 import { EmptyState } from '@/components/EmptyState';
+
+import { cn } from '@/lib/utils';
 
 import type { Novel } from '@/types';
 import type { Profile } from '@/contexts/AuthContext';
@@ -46,7 +52,10 @@ interface RatingSummary {
 }
 
 export default function ProfilePage() {
-  const { username } = useParams<{ username: string }>();
+  const { username } = useParams<{
+    username: string;
+  }>();
+
   const navigate = useNavigate();
 
   const { user: currentUser } = useAuth();
@@ -88,9 +97,9 @@ export default function ProfilePage() {
       setError('');
 
       try {
-        // ====================================================
-        // 1. AMBIL PROFILE
-        // ====================================================
+        // ======================================================
+        // PROFILE
+        // ======================================================
 
         const {
           data: profileData,
@@ -113,6 +122,7 @@ export default function ProfilePage() {
           setProfile(null);
           setNovels([]);
           setLoading(false);
+
           return;
         }
 
@@ -120,12 +130,13 @@ export default function ProfilePage() {
           setProfile(null);
           setNovels([]);
           setLoading(false);
+
           return;
         }
 
-        // ====================================================
-        // 2. AMBIL JUMLAH FOLLOWER / FOLLOWING / NOVEL
-        // ====================================================
+        // ======================================================
+        // COUNTS
+        // ======================================================
 
         const [
           followersRes,
@@ -172,10 +183,6 @@ export default function ProfilePage() {
 
         if (cancelled) return;
 
-        // ====================================================
-        // 3. PROFILE DENGAN COUNT
-        // ====================================================
-
         const profileWithCounts: ProfileWithCounts = {
           ...profileData,
 
@@ -191,9 +198,9 @@ export default function ProfilePage() {
 
         setProfile(profileWithCounts);
 
-        // ====================================================
-        // 4. AMBIL NOVEL AUTHOR
-        // ====================================================
+        // ======================================================
+        // AUTHOR NOVELS
+        // ======================================================
 
         const {
           data: novelData,
@@ -238,10 +245,6 @@ export default function ProfilePage() {
           const rows =
             (novelData ?? []) as SupabaseNovel[];
 
-          // ==================================================
-          // 5. RATING NOVEL
-          // ==================================================
-
           const novelIds =
             rows.map(
               (novel) => novel.id
@@ -259,10 +262,14 @@ export default function ProfilePage() {
               number
             >();
 
+          // ====================================================
+          // RATINGS + CHAPTER COUNT
+          // ====================================================
+
           if (novelIds.length > 0) {
-            // ----------------------------------------------
+            // --------------------------------------------------
             // RATINGS
-            // ----------------------------------------------
+            // --------------------------------------------------
 
             const {
               data: ratingData,
@@ -307,36 +314,38 @@ export default function ProfilePage() {
                           count: 1,
                         }
                       );
-                    } else {
-                      const newCount =
-                        current.count + 1;
 
-                      ratingMap.set(
-                        rating.novel_id,
-                        {
-                          average:
-                            (
-                              current.average *
-                                current.count +
-                              Number(
-                                rating.rating
-                              )
-                            ) /
-                            newCount,
-
-                          count:
-                            newCount,
-                        }
-                      );
+                      return;
                     }
+
+                    const newCount =
+                      current.count + 1;
+
+                    ratingMap.set(
+                      rating.novel_id,
+                      {
+                        average:
+                          (
+                            current.average *
+                              current.count +
+                            Number(
+                              rating.rating
+                            )
+                          ) /
+                          newCount,
+
+                        count:
+                          newCount,
+                      }
+                    );
                   }
                 );
               }
             }
 
-            // ----------------------------------------------
+            // --------------------------------------------------
             // CHAPTER COUNT
-            // ----------------------------------------------
+            // --------------------------------------------------
 
             const {
               data: chapterData,
@@ -387,9 +396,9 @@ export default function ProfilePage() {
 
           if (cancelled) return;
 
-          // ==================================================
-          // 6. MAP KE TYPE NOVEL
-          // ==================================================
+          // ====================================================
+          // MAP NOVELS
+          // ====================================================
 
           const mappedNovels: Novel[] =
             rows.map((novel) => {
@@ -464,13 +473,14 @@ export default function ProfilePage() {
           setNovels(mappedNovels);
         }
 
-        // ====================================================
-        // 7. CEK FOLLOW
-        // ====================================================
+        // ======================================================
+        // CHECK FOLLOW
+        // ======================================================
 
         if (
           currentUser &&
-          currentUser.id !== profileData.id
+          currentUser.id !==
+            profileData.id
         ) {
           const {
             data: followData,
@@ -534,10 +544,13 @@ export default function ProfilePage() {
     return () => {
       cancelled = true;
     };
-  }, [username, currentUser]);
+  }, [
+    username,
+    currentUser,
+  ]);
 
   // ==========================================================
-  // FOLLOW
+  // FOLLOW / UNFOLLOW
   // ==========================================================
 
   const handleFollow = async () => {
@@ -558,6 +571,10 @@ export default function ProfilePage() {
     setFollowAction(true);
 
     try {
+      // ======================================================
+      // UNFOLLOW
+      // ======================================================
+
       if (isFollowing) {
         const {
           error: deleteError,
@@ -589,6 +606,7 @@ export default function ProfilePage() {
             currentProfile
               ? {
                   ...currentProfile,
+
                   follower_count:
                     Math.max(
                       0,
@@ -598,42 +616,49 @@ export default function ProfilePage() {
                 }
               : currentProfile
         );
-      } else {
-        const {
-          error: insertError,
-        } = await supabase
-          .from('follows')
-          .insert({
-            follower_id:
-              currentUser.id,
 
-            following_id:
-              profile.id,
-          });
-
-        if (insertError) {
-          console.error(
-            'Gagal mengikuti profile:',
-            insertError
-          );
-
-          return;
-        }
-
-        setIsFollowing(true);
-
-        setProfile(
-          (currentProfile) =>
-            currentProfile
-              ? {
-                  ...currentProfile,
-                  follower_count:
-                    currentProfile.follower_count +
-                    1,
-                }
-              : currentProfile
-        );
+        return;
       }
+
+      // ======================================================
+      // FOLLOW
+      // ======================================================
+
+      const {
+        error: insertError,
+      } = await supabase
+        .from('follows')
+        .insert({
+          follower_id:
+            currentUser.id,
+
+          following_id:
+            profile.id,
+        });
+
+      if (insertError) {
+        console.error(
+          'Gagal mengikuti profile:',
+          insertError
+        );
+
+        return;
+      }
+
+      setIsFollowing(true);
+
+      setProfile(
+        (currentProfile) =>
+          currentProfile
+            ? {
+                ...currentProfile,
+
+                follower_count:
+                  currentProfile.follower_count +
+                  1,
+              }
+            : currentProfile
+      );
     } finally {
       setFollowAction(false);
     }
@@ -685,7 +710,7 @@ export default function ProfilePage() {
   }
 
   // ==========================================================
-  // PROFILE TIDAK DITEMUKAN
+  // PROFILE NOT FOUND
   // ==========================================================
 
   if (!profile) {
@@ -715,6 +740,13 @@ export default function ProfilePage() {
   const isOwnProfile =
     currentUser?.id === profile.id;
 
+  const canWriteNovel =
+    isOwnProfile &&
+    (
+      profile.role === 'author' ||
+      profile.role === 'admin'
+    );
+
   const avatarUrl =
     profile.avatar;
 
@@ -741,201 +773,298 @@ export default function ProfilePage() {
         )
       : '-';
 
+  const roleLabel =
+    profile.role === 'admin'
+      ? 'Admin'
+      : profile.role === 'author'
+        ? 'Penulis'
+        : profile.role === 'moderator'
+          ? 'Moderator'
+          : 'Pembaca';
+
   // ==========================================================
   // RENDER
   // ==========================================================
 
   return (
-    <div className="mx-auto max-w-[1440px] px-4 py-8 sm:px-6 lg:px-8">
+    <main className="mx-auto w-full max-w-[1440px] px-4 pb-20 pt-5 sm:px-6 sm:pt-8 lg:px-8">
 
       {/* ======================================================
-          PROFILE HEADER
+          PROFILE HERO
       ======================================================= */}
 
-      <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-6 sm:p-8">
+      <section className="relative overflow-hidden rounded-3xl border border-border bg-card shadow-xl">
 
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-transparent" />
+        {/* Decorative Background */}
 
-        <div className="relative flex flex-col items-center gap-5 sm:flex-row sm:items-start">
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute -right-20 -top-28 h-72 w-72 rounded-full bg-primary/10 blur-3xl" />
 
-          {/* AVATAR */}
+          <div className="absolute -bottom-32 left-1/4 h-64 w-64 rounded-full bg-primary/5 blur-3xl" />
 
-          {avatarUrl ? (
-            <img
-              src={avatarUrl}
-              alt={displayName}
-              className="h-24 w-24 shrink-0 rounded-2xl border border-border object-cover"
-            />
-          ) : (
-            <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-2xl bg-primary/20 text-3xl font-bold text-primary">
-              {initials}
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
+        </div>
+
+        <div className="relative p-5 sm:p-8 lg:p-10">
+
+          {/* ==================================================
+              TOP PROFILE
+          =================================================== */}
+
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+
+            {/* AVATAR */}
+
+            <div className="flex shrink-0 justify-center lg:justify-start">
+              <div className="relative">
+
+                <div className="absolute -inset-1 rounded-[1.35rem] bg-primary/20 blur-md" />
+
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt={displayName}
+                    className="relative h-28 w-28 rounded-[1.25rem] border-2 border-border bg-secondary object-cover shadow-xl sm:h-32 sm:w-32"
+                  />
+                ) : (
+                  <div className="relative flex h-28 w-28 items-center justify-center rounded-[1.25rem] border-2 border-border bg-primary/15 text-4xl font-bold text-primary shadow-xl sm:h-32 sm:w-32">
+                    {initials}
+                  </div>
+                )}
+
+                <div className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full border-4 border-card bg-primary text-white shadow-lg">
+                  <UserRound size={14} />
+                </div>
+
+              </div>
             </div>
-          )}
 
-          {/* INFO */}
+            {/* PROFILE INFO */}
 
-          <div className="min-w-0 flex-1 text-center sm:text-left">
+            <div className="min-w-0 flex-1 text-center lg:text-left">
 
-            <h1 className="font-display text-2xl font-bold text-foreground">
-              {displayName}
-            </h1>
+              <div className="flex flex-col items-center gap-2 lg:flex-row lg:items-center">
 
-            {profile.username && (
-              <p className="text-sm text-muted-foreground">
+                <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                  {displayName}
+                </h1>
+
+                <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary">
+                  <Sparkles size={12} />
+                  {roleLabel}
+                </span>
+
+              </div>
+
+              <p className="mt-1 text-sm text-muted-foreground">
                 @{profile.username}
               </p>
-            )}
 
-            {profile.bio && (
-              <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
-                {profile.bio}
-              </p>
-            )}
+              {/* BIO */}
 
-            <div className="mt-2 flex items-center justify-center gap-1.5 text-xs text-muted-foreground sm:justify-start">
-              <Calendar size={14} />
-              <span>
-                Bergabung sejak {joinDate}
+              {profile.bio ? (
+                <p className="mx-auto mt-4 max-w-2xl text-sm leading-6 text-muted-foreground lg:mx-0">
+                  {profile.bio}
+                </p>
+              ) : (
+                <p className="mx-auto mt-4 max-w-2xl text-sm italic text-muted-foreground/60 lg:mx-0">
+                  Belum menambahkan bio.
+                </p>
+              )}
+
+              {/* META */}
+
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-muted-foreground lg:justify-start">
+
+                <span className="inline-flex items-center gap-1.5">
+                  <Calendar size={14} />
+                  Bergabung {joinDate}
+                </span>
+
+                <span className="hidden h-1 w-1 rounded-full bg-border sm:block" />
+
+                <span className="inline-flex items-center gap-1.5">
+                  <PenLine size={14} />
+                  {profile.novel_count} novel
+                </span>
+
+              </div>
+
+            </div>
+
+            {/* =================================================
+                ACTION
+            ================================================== */}
+
+            <div className="flex shrink-0 justify-center lg:justify-end">
+
+              {isOwnProfile ? (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    navigate(
+                      '/settings/profile'
+                    )
+                  }
+                  className="h-10 rounded-xl px-4"
+                >
+                  <Settings
+                    size={16}
+                    className="mr-2"
+                  />
+                  Pengaturan
+                </Button>
+              ) : currentUser ? (
+                <Button
+                  variant={
+                    isFollowing
+                      ? 'outline'
+                      : 'default'
+                  }
+                  onClick={
+                    handleFollow
+                  }
+                  disabled={
+                    followAction
+                  }
+                  className={cn(
+                    'h-10 rounded-xl px-5',
+                    !isFollowing &&
+                      'glow-primary-sm'
+                  )}
+                >
+                  {followAction && (
+                    <Loader2
+                      size={16}
+                      className="mr-2 animate-spin"
+                    />
+                  )}
+
+                  {isFollowing
+                    ? 'Mengikuti'
+                    : 'Ikuti'}
+                </Button>
+              ) : (
+                <Button
+                  variant="default"
+                  className="h-10 rounded-xl px-5 glow-primary-sm"
+                  onClick={() =>
+                    navigate('/login')
+                  }
+                >
+                  Masuk untuk Mengikuti
+                </Button>
+              )}
+
+            </div>
+          </div>
+
+          {/* ==================================================
+              STATISTICS
+          =================================================== */}
+
+          <div className="mt-7 grid grid-cols-3 overflow-hidden rounded-2xl border border-border bg-background/40">
+
+            {/* NOVEL */}
+
+            <div className="flex flex-col items-center justify-center border-r border-border px-2 py-4">
+              <BookOpen
+                size={17}
+                className="mb-1.5 text-primary"
+              />
+
+              <span className="text-lg font-bold text-foreground">
+                {profile.novel_count}
+              </span>
+
+              <span className="text-[11px] text-muted-foreground sm:text-xs">
+                Novel
               </span>
             </div>
 
-            {/* COUNTS */}
+            {/* FOLLOWERS */}
 
-            <div className="mt-4 flex flex-wrap justify-center gap-4 sm:justify-start">
+            <button
+              type="button"
+              className="flex flex-col items-center justify-center border-r border-border px-2 py-4 transition-colors hover:bg-secondary/40"
+            >
+              <Users
+                size={17}
+                className="mb-1.5 text-primary"
+              />
 
-              <div className="flex items-center gap-2 text-sm">
-                <BookOpen
-                  size={16}
-                  className="text-primary"
-                />
+              <span className="text-lg font-bold text-foreground">
+                {profile.follower_count}
+              </span>
 
-                <span className="font-semibold text-foreground">
-                  {profile.novel_count}
-                </span>
+              <span className="text-[11px] text-muted-foreground sm:text-xs">
+                Pengikut
+              </span>
+            </button>
 
-                <span className="text-muted-foreground">
-                  Novel
-                </span>
-              </div>
+            {/* FOLLOWING */}
 
-              <button
-                type="button"
-                className="flex items-center gap-2 text-sm transition-opacity hover:opacity-80"
-              >
-                <Users
-                  size={16}
-                  className="text-primary"
-                />
+            <div className="flex flex-col items-center justify-center px-2 py-4">
+              <UserPlus
+                size={17}
+                className="mb-1.5 text-primary"
+              />
 
-                <span className="font-semibold text-foreground">
-                  {profile.follower_count}
-                </span>
+              <span className="text-lg font-bold text-foreground">
+                {profile.following_count}
+              </span>
 
-                <span className="text-muted-foreground">
-                  Pengikut
-                </span>
-              </button>
+              <span className="text-[11px] text-muted-foreground sm:text-xs">
+                Mengikuti
+              </span>
+            </div>
 
-              <div className="flex items-center gap-2 text-sm">
-                <UserPlus
-                  size={16}
-                  className="text-primary"
-                />
+          </div>
+        </div>
+      </section>
 
-                <span className="font-semibold text-foreground">
-                  {profile.following_count}
-                </span>
+      {/* ======================================================
+          NOVEL SECTION
+      ======================================================= */}
 
-                <span className="text-muted-foreground">
-                  Mengikuti
-                </span>
-              </div>
+      <section className="mt-8 sm:mt-10">
+
+        {/* SECTION HEADER */}
+
+        <div className="mb-5 flex items-end justify-between gap-4">
+
+          <div className="flex min-w-0 items-center gap-3">
+
+            <div className="h-8 w-1 shrink-0 rounded-full bg-primary shadow-[0_0_12px_rgba(168,85,247,0.45)]" />
+
+            <div className="min-w-0">
+
+              <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wider text-primary">
+                Karya Penulis
+              </p>
+
+              <h2 className="truncate font-display text-xl font-bold text-foreground sm:text-2xl">
+                Novel oleh {displayName}
+              </h2>
 
             </div>
           </div>
 
-          {/* ACTION */}
-
-          <div className="flex shrink-0 flex-col gap-2">
-
-            {isOwnProfile ? (
-              <Button
-                variant="outline"
-                onClick={() =>
-                  navigate(
-                    '/settings/profile'
-                  )
-                }
-              >
-                <Settings
-                  size={16}
-                  className="mr-1.5"
-                />
-
-                Pengaturan
-              </Button>
-            ) : currentUser ? (
-              <Button
-                variant={
-                  isFollowing
-                    ? 'outline'
-                    : 'default'
-                }
-                onClick={
-                  handleFollow
-                }
-                disabled={followAction}
-                className={
-                  isFollowing
-                    ? ''
-                    : 'glow-primary-sm'
-                }
-              >
-                {followAction && (
-                  <Loader2
-                    size={16}
-                    className="mr-1.5 animate-spin"
-                  />
-                )}
-
-                {isFollowing
-                  ? 'Mengikuti'
-                  : 'Ikuti'}
-              </Button>
-            ) : (
-              <Button
-                variant="default"
-                className="glow-primary-sm"
-                onClick={() =>
-                  navigate('/login')
-                }
-              >
-                Masuk untuk Mengikuti
-              </Button>
-            )}
-
-          </div>
-        </div>
-      </div>
-
-      {/* ======================================================
-          NOVELS
-      ======================================================= */}
-
-      <div className="mt-10 space-y-5">
-
-        <div className="flex items-center gap-3">
-
-          <div className="h-6 w-1 rounded-full bg-primary glow-primary-sm" />
-
-          <h2 className="font-display text-xl font-bold text-foreground">
-            Novel oleh {displayName}
-          </h2>
+          {novels.length > 0 && (
+            <span className="shrink-0 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
+              {novels.length} karya
+            </span>
+          )}
 
         </div>
+
+        {/* ====================================================
+            NOVEL GRID
+        ===================================================== */}
 
         {novels.length > 0 ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+
             {novels.map(
               (novel) => (
                 <NovelCard
@@ -944,20 +1073,57 @@ export default function ProfilePage() {
                 />
               )
             )}
+
           </div>
         ) : (
-          <EmptyState
-            icon={BookOpen}
-            title="Belum ada novel"
-            description={
-              isOwnProfile
-                ? 'Kamu belum menerbitkan novel.'
-                : `${displayName} belum menerbitkan novel.`
-            }
-          />
+          /* ==================================================
+             EMPTY STATE
+          =================================================== */
+
+          <div className="rounded-3xl border border-dashed border-border bg-card/40 px-6 py-14 text-center sm:py-16">
+
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <BookOpen size={28} />
+            </div>
+
+            <h3 className="mt-5 font-display text-lg font-semibold text-foreground">
+              Belum ada novel
+            </h3>
+
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+              {isOwnProfile
+                ? 'Kamu belum menerbitkan novel. Mulai tulis ceritamu dan bagikan ke pembaca di Novel Semesta.'
+                : `${displayName} belum menerbitkan novel.`}
+            </p>
+
+            {/* =================================================
+                TULIS NOVEL
+                HANYA UNTUK PROFILE SENDIRI + AUTHOR/ADMIN
+            ================================================== */}
+
+            {canWriteNovel && (
+              <div className="mt-6 flex justify-center">
+                <Button
+                  onClick={() =>
+                    navigate(
+                      '/author/create-novel'
+                    )
+                  }
+                  className="h-10 rounded-xl px-5 glow-primary-sm"
+                >
+                  <BookOpen
+                    size={16}
+                    className="mr-1.5"
+                  />
+                  Tulis Novel
+                </Button>
+              </div>
+            )}
+
+          </div>
         )}
 
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }
