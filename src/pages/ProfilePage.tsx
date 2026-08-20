@@ -740,12 +740,7 @@ export default function ProfilePage() {
   const isOwnProfile =
     currentUser?.id === profile.id;
 
-  const canWriteNovel =
-    isOwnProfile &&
-    (
-      profile.role === 'author' ||
-      profile.role === 'admin'
-    );
+  const canWriteNovel = isOwnProfile;
 
   const avatarUrl =
     profile.avatar;
@@ -776,11 +771,9 @@ export default function ProfilePage() {
   const roleLabel =
     profile.role === 'admin'
       ? 'Admin'
-      : profile.role === 'author'
+      : profile.novel_count > 0
         ? 'Penulis'
-        : profile.role === 'moderator'
-          ? 'Moderator'
-          : 'Pembaca';
+        : 'Pembaca';
 
   // ==========================================================
   // RENDER
@@ -1055,6 +1048,42 @@ export default function ProfilePage() {
               {novels.length} karya
             </span>
           )}
+          {canWriteNovel && (
+            <div className="flex shrink-0 items-center gap-2">
+              {/* TULIS NOVEL */}
+
+              <Button
+                onClick={() =>
+                  navigate('/author/create-novel')
+                }
+                className="h-10 rounded-xl px-4 glow-primary-sm"
+              >
+                <PenLine
+                  size={16}
+                  className="mr-2"
+                />
+                Tulis Novel
+              </Button>
+
+              {/* KELOLA NOVEL */}
+
+              {profile.novel_count > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    navigate('/author/manage-novels')
+                  }
+                  className="h-10 rounded-xl px-4"
+                >
+                  <BookOpen
+                    size={16}
+                    className="mr-2"
+                  />
+                  Kelola Novel
+                </Button>
+              )}
+            </div>
+          )}
 
         </div>
 
@@ -1101,24 +1130,7 @@ export default function ProfilePage() {
                 HANYA UNTUK PROFILE SENDIRI + AUTHOR/ADMIN
             ================================================== */}
 
-            {canWriteNovel && (
-              <div className="mt-6 flex justify-center">
-                <Button
-                  onClick={() =>
-                    navigate(
-                      '/author/create-novel'
-                    )
-                  }
-                  className="h-10 rounded-xl px-5 glow-primary-sm"
-                >
-                  <BookOpen
-                    size={16}
-                    className="mr-1.5"
-                  />
-                  Tulis Novel
-                </Button>
-              </div>
-            )}
+            
 
           </div>
         )}

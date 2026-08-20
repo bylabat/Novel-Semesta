@@ -20,11 +20,13 @@ import ProfilePage from '@/pages/ProfilePage';
 import SettingsPage from '@/pages/SettingsPage';
 import LibraryPage from '@/pages/LibraryPage';
 import AuthorDashboardPage from '@/pages/author/AuthorDashboardPage';
+import AdminDashboardPage from '@/pages/admin/AdminDashboardPage';
 import CreateNovelPage from '@/pages/author/CreateNovelPage';
 import ManageNovelsPage from '@/pages/author/ManageNovelsPage';
 import EditNovelPage from '@/pages/author/EditNovelPage';
 import WriteChapterPage from '@/pages/author/WriteChapterPage';
 import { AuthorGuard } from '@/components/auth/AuthorGuard';
+import { AdminGuard } from '@/components/auth/AdminGuard';
 import ManageChaptersPage from '@/pages/author/ManageChaptersPage';
 import EditChapterPage from '@/pages/author/EditChapterPage';
 import ReadChapterPage from '@/pages/ReadChapterPage';
@@ -54,7 +56,31 @@ function App() {
               <Route path="/library" element={<LibraryPage />} />
               <Route path="/read/:chapterId" element={<ReadChapterPage />} />
               <Route path="/rak" element={<LibraryPage />} />
-              <Route path="/author/dashboard" element={<AuthorGuard><AuthorDashboardPage /></AuthorGuard>} />
+              <Route
+                path="/author/dashboard"
+                element={
+                  <AuthorGuard>
+                    <AuthorDashboardPage />
+                  </AuthorGuard>
+                }
+              />
+
+              <Route
+                path="/admin/dashboard"
+                element={
+                  <AdminGuard>
+                    <AdminDashboardPage />
+                  </AdminGuard>
+                }
+              />
+              <Route
+                path="/admin"
+                element={
+                  <AdminGuard>
+                    <AdminDashboardPage />
+                  </AdminGuard>
+                }
+              />
               <Route path="/author/create-novel" element={<AuthorGuard><CreateNovelPage /></AuthorGuard>} />
               <Route path="/author/manage-novels" element={<AuthorGuard><ManageNovelsPage /></AuthorGuard>} />
               <Route path="/author/edit-novel/:id" element={<AuthorGuard><EditNovelPage /></AuthorGuard>} />

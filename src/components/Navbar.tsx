@@ -103,8 +103,10 @@ export function Navbar() {
 
   const handleSignOut = async () => {
     await signOut();
+
     setUserMenuOpen(false);
     setMobileOpen(false);
+
     navigate('/');
   };
 
@@ -346,14 +348,17 @@ export function Navbar() {
                           Pengaturan
                         </Link>
 
-                        {(profile?.role === 'author' ||
-                          profile?.role === 'admin') && (
+                        {/* =================================================
+                            ADMIN
+                        ================================================== */}
+
+                        {profile?.role === 'admin' && (
                           <Link
-                            to="/author/dashboard"
+                            to="/admin/dashboard"
                             className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-primary transition-colors hover:bg-primary/10"
                           >
                             <LayoutDashboard size={16} />
-                            Dashboard
+                            Dashboard Admin
                           </Link>
                         )}
 
@@ -568,17 +573,20 @@ export function Navbar() {
                     Pengaturan
                   </Link>
 
-                  {(profile?.role === 'author' ||
-                    profile?.role === 'admin') && (
+                  {/* =================================================
+                      ADMIN
+                  ================================================== */}
+
+                  {profile?.role === 'admin' && (
                     <Link
-                      to="/author/dashboard"
+                      to="/admin/dashboard"
                       onClick={() =>
                         setMobileOpen(false)
                       }
                       className="flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-primary hover:bg-primary/10"
                     >
                       <LayoutDashboard size={16} />
-                      Dashboard
+                      Dashboard Admin
                     </Link>
                   )}
 
