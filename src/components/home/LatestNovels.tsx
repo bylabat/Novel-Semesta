@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
-import { Clock, Eye, ChevronRight, Loader2 } from 'lucide-react';
+import {
+  Clock,
+  Eye,
+  ChevronRight,
+  Loader2,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { supabase } from "@/lib/supabase";
 import { SectionHeader } from "@/components/SectionHeader";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
 
 interface Profile {
   username: string | null;
@@ -33,11 +37,11 @@ function formatRelativeTime(dateString: string) {
   );
 
   if (diffInSeconds < 0) {
-    return 'Baru saja';
+    return "Baru saja";
   }
 
   if (diffInSeconds < 60) {
-    return 'Baru saja';
+    return "Baru saja";
   }
 
   const diffInMinutes = Math.floor(
@@ -128,7 +132,10 @@ export function LatestNovels() {
         if (cancelled) return;
 
         if (error) {
-          console.error("Gagal mengambil novel terbaru:", error);
+          console.error(
+            "Gagal mengambil novel terbaru:",
+            error,
+          );
 
           setNovels([]);
           setLoading(false);
@@ -151,13 +158,18 @@ export function LatestNovels() {
         // 3. AMBIL ID NOVEL
         // ==========================================
 
-        const novelIds = novelData.map((novel) => novel.id);
+        const novelIds = novelData.map(
+          (novel) => novel.id,
+        );
 
         // ==========================================
         // 4. AMBIL GENRE
         // ==========================================
 
-        const { data: genreRelations, error: genreError } = await supabase
+        const {
+          data: genreRelations,
+          error: genreError,
+        } = await supabase
           .from("novel_genres")
           .select(
             `
@@ -172,36 +184,48 @@ export function LatestNovels() {
         if (cancelled) return;
 
         if (genreError) {
-          console.error("Gagal mengambil genre novel terbaru:", genreError);
+          console.error(
+            "Gagal mengambil genre novel terbaru:",
+            genreError,
+          );
         }
 
         // ==========================================
         // 5. GABUNGKAN GENRE
         // ==========================================
 
-        const formattedNovels: Novel[] = novelData.map((novel) => {
-          const genres = (genreRelations ?? [])
-            .filter((relation) => relation.novel_id === novel.id)
-            .map((relation) => {
-              const genre = Array.isArray(relation.genres)
-                ? relation.genres[0]
-                : relation.genres;
+        const formattedNovels: Novel[] =
+          novelData.map((novel) => {
+            const genres = (genreRelations ?? [])
+              .filter(
+                (relation) =>
+                  relation.novel_id === novel.id,
+              )
+              .map((relation) => {
+                const genre = Array.isArray(
+                  relation.genres,
+                )
+                  ? relation.genres[0]
+                  : relation.genres;
 
-              return genre?.name ?? "";
-            })
-            .filter(Boolean);
+                return genre?.name ?? "";
+              })
+              .filter(Boolean);
 
-          return {
-            ...novel,
-            views: novel.views ?? 0,
-            genres,
-          } as Novel;
-        });
+            return {
+              ...novel,
+              views: novel.views ?? 0,
+              genres,
+            } as Novel;
+          });
 
         setNovels(formattedNovels);
         setLoading(false);
       } catch (error) {
-        console.error("Gagal memuat novel terbaru:", error);
+        console.error(
+          "Gagal memuat novel terbaru:",
+          error,
+        );
 
         if (!cancelled) {
           setNovels([]);
@@ -225,25 +249,45 @@ export function LatestNovels() {
         link="/terbaru"
       />
 
+      {/* ==========================================
+          LOADING
+      ========================================== */}
+
       {loading ? (
         <div className="flex min-h-[180px] items-center justify-center">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 size={20} className="animate-spin text-primary" />
+            <Loader2
+              size={20}
+              className="animate-spin text-primary"
+            />
+
             Memuat novel...
           </div>
         </div>
       ) : novels.length === 0 ? (
+        /* ==========================================
+           EMPTY
+        ========================================== */
+
         <div className="rounded-xl border border-border bg-card p-8 text-center">
-          <p className="font-medium text-foreground">Belum ada novel</p>
+          <p className="font-medium text-foreground">
+            Belum ada novel
+          </p>
 
           <p className="mt-1 text-sm text-muted-foreground">
             Belum ada novel publik yang tersedia.
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {novels.map((novel, index) => {
-            const author = Array.isArray(novel.profiles)
+        /* ==========================================
+           NOVELS
+        ========================================== */
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {novels.map((novel) => {
+            const author = Array.isArray(
+              novel.profiles,
+            )
               ? novel.profiles[0]
               : novel.profiles;
 
@@ -251,55 +295,80 @@ export function LatestNovels() {
               <Link
                 key={novel.id}
                 to={`/novel/${novel.id}`}
-                className={cn(
-                  "group flex gap-3 rounded-xl border border-border bg-card p-3 transition-all duration-300 hover:border-primary/40 hover:shadow-md hover:shadow-primary/5",
-                  index === 0 && "sm:col-span-2 lg:col-span-1",
-                )}
+                className="group flex min-w-0 gap-3 rounded-xl border border-border bg-card p-3 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md hover:shadow-primary/5"
               >
-                <div className="relative h-24 w-16 shrink-0 overflow-hidden rounded-lg">
+                {/* COVER */}
+
+                <div className="relative h-24 w-16 shrink-0 overflow-hidden rounded-lg sm:h-28 sm:w-[74px]">
                   <img
-                    src={novel.cover || "/placeholder.svg"}
+                    src={
+                      novel.cover ||
+                      "/placeholder.svg"
+                    }
                     alt={novel.title}
                     loading="lazy"
                     className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />
                 </div>
 
+                {/* CONTENT */}
+
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="line-clamp-1 font-display text-sm font-semibold text-foreground transition-colors group-hover:text-primary">
+                  {/* TITLE + BADGE */}
+
+                  <div className="flex min-w-0 items-start justify-between gap-2">
+                    <h3 className="min-w-0 flex-1 line-clamp-2 font-display text-sm font-semibold leading-snug text-foreground transition-colors group-hover:text-primary">
                       {novel.title}
                     </h3>
 
-                    <Badge className="shrink-0 bg-success text-white">
+                    <Badge className="shrink-0 bg-success px-2 text-[10px] text-white">
                       Baru
                     </Badge>
                   </div>
 
-                  <p className="text-xs text-muted-foreground">
-                    {author?.display_name || author?.username || "Author"}
+                  {/* AUTHOR */}
+
+                  <p className="truncate text-xs text-muted-foreground">
+                    {author?.display_name ||
+                      author?.username ||
+                      "Author"}
                   </p>
 
-                  <div className="flex flex-wrap gap-1">
-                    {novel.genres.slice(0, 2).map((genre) => (
-                      <span
-                        key={genre}
-                        className="rounded-md bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
-                      >
-                        {genre}
-                      </span>
-                    ))}
-                  </div>
+                  {/* GENRES */}
 
-                  <div className="mt-auto flex items-center gap-3 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
+                  {novel.genres.length > 0 && (
+                    <div className="flex min-w-0 flex-wrap gap-1 overflow-hidden">
+                      {novel.genres
+                        .slice(0, 2)
+                        .map((genre) => (
+                          <span
+                            key={genre}
+                            className="max-w-full truncate rounded-md bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+                          >
+                            {genre}
+                          </span>
+                        ))}
+                    </div>
+                  )}
+
+                  {/* META */}
+
+                  <div className="mt-auto flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground sm:gap-3 sm:text-xs">
+                    <span className="flex shrink-0 items-center gap-1">
                       <Eye size={12} />
                       {novel.views ?? 0}
                     </span>
 
-                    <span className="flex items-center gap-1">
-                      <Clock size={12} />
-                      {formatRelativeTime(novel.updated_at)}
+                    <span className="flex min-w-0 items-center gap-1 truncate">
+                      <Clock
+                        size={12}
+                        className="shrink-0"
+                      />
+                      <span className="truncate">
+                        {formatRelativeTime(
+                          novel.updated_at,
+                        )}
+                      </span>
                     </span>
 
                     <ChevronRight

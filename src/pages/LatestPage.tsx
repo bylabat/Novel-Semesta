@@ -210,29 +210,33 @@ export default function LatestPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1440px] px-4 py-8 sm:px-6 lg:px-8">
-      {/* HEADER */}
+    <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+      {/* ==========================================
+          HEADER
+      ========================================== */}
 
-      <div className="mb-8 flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+      <div className="mb-6 flex items-center gap-3 sm:mb-8">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 sm:h-11 sm:w-11">
           <Clock
             className="text-primary"
-            size={24}
+            size={22}
           />
         </div>
 
-        <div>
-          <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">
+        <div className="min-w-0">
+          <h1 className="font-display text-xl font-bold leading-tight text-foreground sm:text-2xl lg:text-3xl">
             Novel Terbaru
           </h1>
 
-          <p className="text-sm text-muted-foreground">
+          <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
             Novel yang baru saja diterbitkan
           </p>
         </div>
       </div>
 
-      {/* LOADING */}
+      {/* ==========================================
+          LOADING
+      ========================================== */}
 
       {loading && (
         <div className="flex min-h-[300px] items-center justify-center">
@@ -247,26 +251,30 @@ export default function LatestPage() {
         </div>
       )}
 
-      {/* ERROR */}
+      {/* ==========================================
+          ERROR
+      ========================================== */}
 
       {!loading && error && (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-5">
+        <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-5 sm:p-6">
           <p className="font-medium text-destructive">
             Gagal memuat novel terbaru
           </p>
 
-          <p className="mt-2 break-words text-sm text-destructive/80">
+          <p className="mt-2 break-words text-sm leading-6 text-destructive/80">
             {error}
           </p>
         </div>
       )}
 
-      {/* EMPTY */}
+      {/* ==========================================
+          EMPTY
+      ========================================== */}
 
       {!loading &&
         !error &&
         novels.length === 0 && (
-          <div className="rounded-xl border border-border bg-card p-10 text-center">
+          <div className="rounded-2xl border border-border bg-card p-8 text-center sm:p-10">
             <Clock
               size={36}
               className="mx-auto text-muted-foreground"
@@ -282,39 +290,58 @@ export default function LatestPage() {
           </div>
         )}
 
-      {/* NOVELS */}
+      {/* ==========================================
+          NOVEL GRID
+      ========================================== */}
 
       {!loading &&
         !error &&
         novels.length > 0 && (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          <div
+            className="
+              grid
+              grid-cols-2
+              gap-x-3
+              gap-y-6
+              sm:grid-cols-3
+              sm:gap-x-4
+              sm:gap-y-8
+              md:grid-cols-4
+              lg:grid-cols-5
+              xl:grid-cols-6
+            "
+          >
             {novels.map((novel) => (
-              <NovelCard
+              <div
                 key={novel.id}
-                novel={{
-                  id: novel.id,
-                  title: novel.title,
-                  author: getAuthorName(novel),
-                  cover:
-                    novel.cover ||
-                    '/placeholder.svg',
-                  genres: novel.genres,
-                  rating: 0,
-                  ratingCount: 0,
-                  views: String(
-                    novel.views ?? 0,
-                  ),
-                  status:
-                    novel.status === 'completed'
-                      ? 'Completed'
-                      : novel.status === 'hiatus'
-                        ? 'Hiatus'
-                        : 'Ongoing',
-                  chapterCount: 0,
-                  latestChapter: '',
-                  description: '',
-                }}
-              />
+                className="min-w-0"
+              >
+                <NovelCard
+                  novel={{
+                    id: novel.id,
+                    title: novel.title,
+                    author: getAuthorName(novel),
+                    cover:
+                      novel.cover ||
+                      '/placeholder.svg',
+                    genres: novel.genres,
+                    rating: 0,
+                    ratingCount: 0,
+                    views: String(
+                      novel.views ?? 0,
+                    ),
+                    status:
+                      novel.status === 'completed'
+                        ? 'Completed'
+                        : novel.status === 'hiatus'
+                          ? 'Hiatus'
+                          : 'Ongoing',
+                    chapterCount: 0,
+                    latestChapter: '',
+                    description: '',
+                  }}
+                />
+              </div>
             ))}
           </div>
         )}
