@@ -1,18 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
 import {
-  AlertTriangle,
-  Ban,
-  BookOpen,
-  CheckCircle2,
-  Clock,
-  Eye,
-  FileWarning,
-  Loader2,
-  MessageCircle,
-  Star,
-  Trash2,
-  Users,
-  XCircle,
+  useCallback,
+  useEffect,
+  useState,
+} from 'react';
+
+import { useNavigate } from 'react-router-dom';
+import { AlertTriangle, Ban,BookOpen, CheckCircle2,Clock, Eye, FileWarning,
+  Loader2, MessageCircle, Star,Trash2, Users,XCircle,
 } from 'lucide-react';
 
 import type { LucideIcon } from 'lucide-react';
@@ -91,9 +85,10 @@ const EMPTY_STATS: WebsiteStats = {
 // PAGE
 // ============================================================
 
-export default function AdminDashboardPage() {
-  const { user, profile } = useAuth();
-
+  export default function AdminDashboardPage() {
+    const { user, profile } = useAuth();
+    const navigate = useNavigate();
+    
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [stats, setStats] =
     useState<WebsiteStats>(EMPTY_STATS);
@@ -1411,7 +1406,7 @@ export default function AdminDashboardPage() {
             iconClass="text-primary"
             bgClass="bg-primary/10"
             onClick={() => {
-              alert('Daftar pengguna akan dibuka di sini.');
+              navigate('/admin/users');
             }}
           />
 
@@ -1422,7 +1417,7 @@ export default function AdminDashboardPage() {
             iconClass="text-blue-400"
             bgClass="bg-blue-500/10"
             onClick={() => {
-              alert('Daftar semua novel akan dibuka di sini.');
+              navigate('/admin/novels');
             }}
           />
 
@@ -1503,17 +1498,6 @@ export default function AdminDashboardPage() {
             }}
           />
 
-          <StatCard
-            label="Laporan Menunggu"
-            value={stats.pendingReports}
-            icon={Clock}
-            iconClass="text-amber-400"
-            bgClass="bg-amber-500/10"
-            onClick={() => {
-              alert('Laporan yang menunggu akan dibuka di sini.');
-            }}
-          />
-
         </div>
       </section>
 
@@ -1521,58 +1505,63 @@ export default function AdminDashboardPage() {
           MODERATION SUMMARY
       ======================================================= */}
 
-      <section className="mt-10">
+          <section className="mt-10">
+            <div className="mb-5">
+              <h2 className="font-display text-xl font-bold text-foreground">
+                Ringkasan Moderasi
+              </h2>
 
-        <div className="mb-5">
-          <h2 className="font-display text-xl font-bold text-foreground">
-            Ringkasan Moderasi
-          </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Kondisi laporan dan novel yang sedang ditangani administrator.
+              </p>
+            </div>
 
-          <p className="mt-1 text-sm text-muted-foreground">
-            Kondisi laporan dan novel yang sedang ditangani administrator.
-          </p>
-        </div>
+            <div className="grid gap-4 sm:grid-cols-3">
 
-        <div className="grid gap-4 sm:grid-cols-3">
+              <SummaryCard
+                label="Laporan Menunggu"
+                value={stats.pendingReports}
+                icon={Clock}
+                className="border-amber-500/20 bg-amber-500/5"
+                iconClass="text-amber-400"
+                onClick={() => {
+                  alert('Daftar laporan menunggu akan dibuka di sini.');
+                }}
+              />
 
-          <SummaryCard
-            label="Laporan Menunggu"
-            value={
-              stats.pendingReports
-            }
-            icon={Clock}
-            className="border-amber-500/20 bg-amber-500/5"
-            iconClass="text-amber-400"
-          />
+              <SummaryCard
+                label="Novel Diblokir"
+                value={stats.blockedNovels}
+                icon={Ban}
+                className="border-red-500/20 bg-red-500/5"
+                iconClass="text-red-400"
+                onClick={() => {
+                  alert('Daftar novel diblokir akan dibuka di sini.');
+                }}
+              />
 
-          <SummaryCard
-            label="Novel Diblokir"
-            value={
-              stats.blockedNovels
-            }
-            icon={Ban}
-            className="border-red-500/20 bg-red-500/5"
-            iconClass="text-red-400"
-          />
+              <SummaryCard
+                label="Laporan Ditangani"
+                value={handledReports}
+                icon={CheckCircle2}
+                className="border-green-500/20 bg-green-500/5"
+                iconClass="text-green-400"
+                onClick={() => {
+                  alert('Riwayat laporan akan dibuka di sini.');
+                }}
+              />
 
-          <SummaryCard
-            label="Laporan Ditangani"
-            value={
-              handledReports
-            }
-            icon={CheckCircle2}
-            className="border-green-500/20 bg-green-500/5"
-            iconClass="text-green-400"
-          />
-
-        </div>
-      </section>
+            </div>
+          </section>
 
       {/* ======================================================
           PENDING REPORTS
       ======================================================= */}
 
-      <section className="mt-10">
+        <section
+          id="pending-reports"
+          className="mt-10 scroll-mt-24"
+        >
 
         <div className="mb-5 flex items-center justify-between gap-4">
 
@@ -1649,15 +1638,56 @@ export default function AdminDashboardPage() {
             )}
           </div>
         )}
+          {/* ======================================================
+              BLOCKED NOVELS
+          ====================================================== */}
+
+          <section
+            id="blocked-novels"
+            className="mt-10 scroll-mt-24"
+          >
+            <div className="mb-5">
+              <h2 className="font-display text-xl font-bold text-foreground">
+                Novel Diblokir
+              </h2>
+
+              <p className="mt-1 text-sm text-muted-foreground">
+                Daftar novel yang telah diblokir oleh administrator.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-red-500/20 bg-card p-6">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-500/10">
+                  <Ban
+                    size={22}
+                    className="text-red-400"
+                  />
+                </div>
+
+                <div>
+                  <p className="font-semibold text-foreground">
+                    {stats.blockedNovels} Novel Diblokir
+                  </p>
+
+                  <p className="text-sm text-muted-foreground">
+                    Novel yang saat ini memiliki status privasi diblokir.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
       </section>
 
       {/* ======================================================
           PROCESSED REPORTS
       ======================================================= */}
 
-      {processedReports.length >
-        0 && (
-        <section className="mt-10">
+  {processedReports.length > 0 && (
+    <section
+      id="processed-reports"
+      className="mt-10 scroll-mt-24"
+    >
 
           <div className="mb-5">
             <h2 className="font-display text-xl font-bold text-foreground">
@@ -2159,22 +2189,29 @@ function SummaryCard({
   icon: Icon,
   className,
   iconClass,
+  onClick,
 }: {
   label: string;
   value: number;
   icon: LucideIcon;
   className: string;
   iconClass: string;
+  onClick?: () => void;
 }) {
   return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
       className={cn(
-        'rounded-2xl border p-5',
+        'w-full rounded-2xl border p-5 text-left transition-all',
         className,
+        onClick
+          ? 'cursor-pointer hover:-translate-y-0.5 hover:shadow-lg'
+          : 'cursor-default',
       )}
     >
       <div className="flex items-center justify-between">
-
         <div>
           <p className="text-sm text-muted-foreground">
             {label}
@@ -2183,6 +2220,12 @@ function SummaryCard({
           <p className="mt-2 font-display text-3xl font-bold text-foreground">
             {formatNumber(value)}
           </p>
+
+          {onClick && (
+            <p className="mt-2 text-xs font-medium text-primary">
+              Klik untuk melihat detail →
+            </p>
+          )}
         </div>
 
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-background/50">
@@ -2191,9 +2234,8 @@ function SummaryCard({
             className={iconClass}
           />
         </div>
-
       </div>
-    </div>
+    </button>
   );
 }
 

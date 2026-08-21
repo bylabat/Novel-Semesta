@@ -21,6 +21,8 @@ import SettingsPage from '@/pages/SettingsPage';
 import LibraryPage from '@/pages/LibraryPage';
 import AuthorDashboardPage from '@/pages/author/AuthorDashboardPage';
 import AdminDashboardPage from '@/pages/admin/AdminDashboardPage';
+import AdminUsersPage from '@/pages/admin/AdminUsersPage';
+import AdminNovelsPage from '@/pages/admin/AdminNovelsPage';
 import CreateNovelPage from '@/pages/author/CreateNovelPage';
 import ManageNovelsPage from '@/pages/author/ManageNovelsPage';
 import EditNovelPage from '@/pages/author/EditNovelPage';
@@ -74,10 +76,26 @@ function App() {
                 }
               />
               <Route
+                path="/admin/users"
+                element={
+                  <AdminGuard>
+                    <AdminUsersPage />
+                  </AdminGuard>
+                }
+              />
+              <Route
                 path="/admin"
                 element={
                   <AdminGuard>
                     <AdminDashboardPage />
+                  </AdminGuard>
+                }
+              />
+              <Route
+                path="/admin/novels"
+                element={
+                  <AdminGuard>
+                    <AdminNovelsPage />
                   </AdminGuard>
                 }
               />
