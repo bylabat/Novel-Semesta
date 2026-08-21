@@ -1428,7 +1428,7 @@ const EMPTY_STATS: WebsiteStats = {
             iconClass="text-violet-400"
             bgClass="bg-violet-500/10"
             onClick={() => {
-              alert('Daftar semua chapter akan dibuka di sini.');
+              navigate('/admin/chapters');
             }}
           />
 
@@ -1439,7 +1439,7 @@ const EMPTY_STATS: WebsiteStats = {
             iconClass="text-green-400"
             bgClass="bg-green-500/10"
             onClick={() => {
-              alert('Daftar semua komentar akan dibuka di sini.');
+              navigate('/admin/comments');
             }}
           />
 

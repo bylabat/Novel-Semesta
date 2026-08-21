@@ -5,6 +5,7 @@ import { Navbar } from '@/components/Navbar';
 import { MobileNavbar } from '@/components/MobileNavbar';
 import { Footer } from '@/components/Footer';
 import { Toaster } from '@/components/ui/toaster';
+
 import HomePage from '@/pages/HomePage';
 import NovelPage from '@/pages/NovelPage';
 import NovelDetailPage from '@/pages/NovelDetailPage';
@@ -19,20 +20,24 @@ import RegisterPage from '@/pages/RegisterPage';
 import ProfilePage from '@/pages/ProfilePage';
 import SettingsPage from '@/pages/SettingsPage';
 import LibraryPage from '@/pages/LibraryPage';
+import ReadChapterPage from '@/pages/ReadChapterPage';
+
 import AuthorDashboardPage from '@/pages/author/AuthorDashboardPage';
-import AdminDashboardPage from '@/pages/admin/AdminDashboardPage';
-import AdminUsersPage from '@/pages/admin/AdminUsersPage';
-import AdminNovelsPage from '@/pages/admin/AdminNovelsPage';
 import CreateNovelPage from '@/pages/author/CreateNovelPage';
 import ManageNovelsPage from '@/pages/author/ManageNovelsPage';
 import EditNovelPage from '@/pages/author/EditNovelPage';
 import WriteChapterPage from '@/pages/author/WriteChapterPage';
-import { AuthorGuard } from '@/components/auth/AuthorGuard';
-import { AdminGuard } from '@/components/auth/AdminGuard';
 import ManageChaptersPage from '@/pages/author/ManageChaptersPage';
 import EditChapterPage from '@/pages/author/EditChapterPage';
-import ReadChapterPage from '@/pages/ReadChapterPage';
 
+import AdminDashboardPage from '@/pages/admin/AdminDashboardPage';
+import AdminUsersPage from '@/pages/admin/AdminUsersPage';
+import AdminNovelsPage from '@/pages/admin/AdminNovelsPage';
+import AdminChaptersPage from '@/pages/admin/AdminChaptersPage';
+import AdminCommentsPage from '@/pages/admin/AdminCommentsPage';
+
+import { AuthorGuard } from '@/components/auth/AuthorGuard';
+import { AdminGuard } from '@/components/auth/AdminGuard';
 
 function App() {
   return (
@@ -40,24 +45,92 @@ function App() {
       <AuthProvider>
         <div className="flex min-h-screen flex-col bg-background">
           <Navbar />
+
           <main className="flex-1 pb-16 lg:pb-0">
             <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/novel" element={<NovelPage />} />
-              <Route path="/novel/:id" element={<NovelDetailPage />} />
-              <Route path="/genre" element={<GenrePage />} />
-              <Route path="/genre/:id" element={<GenreDetailPage />} />
-              <Route path="/populer" element={<PopularPage />} />
-              <Route path="/terbaru" element={<LatestPage />} />
-              <Route path="/ranking" element={<RankingPage />} />
-              <Route path="/komunitas" element={<KomunitasPage />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
-              <Route path="/profile/:username" element={<ProfilePage />} />
-              <Route path="/settings/profile" element={<SettingsPage />} />
-              <Route path="/library" element={<LibraryPage />} />
-              <Route path="/read/:chapterId" element={<ReadChapterPage />} />
-              <Route path="/rak" element={<LibraryPage />} />
+
+              {/* PUBLIC */}
+              <Route
+                path="/"
+                element={<HomePage />}
+              />
+
+              <Route
+                path="/novel"
+                element={<NovelPage />}
+              />
+
+              <Route
+                path="/novel/:id"
+                element={<NovelDetailPage />}
+              />
+
+              <Route
+                path="/genre"
+                element={<GenrePage />}
+              />
+
+              <Route
+                path="/genre/:id"
+                element={<GenreDetailPage />}
+              />
+
+              <Route
+                path="/populer"
+                element={<PopularPage />}
+              />
+
+              <Route
+                path="/terbaru"
+                element={<LatestPage />}
+              />
+
+              <Route
+                path="/ranking"
+                element={<RankingPage />}
+              />
+
+              <Route
+                path="/komunitas"
+                element={<KomunitasPage />}
+              />
+
+              <Route
+                path="/login"
+                element={<LoginPage />}
+              />
+
+              <Route
+                path="/register"
+                element={<RegisterPage />}
+              />
+
+              <Route
+                path="/profile/:username"
+                element={<ProfilePage />}
+              />
+
+              <Route
+                path="/settings/profile"
+                element={<SettingsPage />}
+              />
+
+              <Route
+                path="/library"
+                element={<LibraryPage />}
+              />
+
+              <Route
+                path="/rak"
+                element={<LibraryPage />}
+              />
+
+              <Route
+                path="/read/:chapterId"
+                element={<ReadChapterPage />}
+              />
+
+              {/* AUTHOR */}
               <Route
                 path="/author/dashboard"
                 element={
@@ -68,6 +141,61 @@ function App() {
               />
 
               <Route
+                path="/author/create-novel"
+                element={
+                  <AuthorGuard>
+                    <CreateNovelPage />
+                  </AuthorGuard>
+                }
+              />
+
+              <Route
+                path="/author/manage-novels"
+                element={
+                  <AuthorGuard>
+                    <ManageNovelsPage />
+                  </AuthorGuard>
+                }
+              />
+
+              <Route
+                path="/author/edit-novel/:id"
+                element={
+                  <AuthorGuard>
+                    <EditNovelPage />
+                  </AuthorGuard>
+                }
+              />
+
+              <Route
+                path="/author/manage-chapters/:novelId"
+                element={
+                  <AuthorGuard>
+                    <ManageChaptersPage />
+                  </AuthorGuard>
+                }
+              />
+
+              <Route
+                path="/author/edit-chapter/:chapterId"
+                element={
+                  <AuthorGuard>
+                    <EditChapterPage />
+                  </AuthorGuard>
+                }
+              />
+
+              <Route
+                path="/author/write-chapter"
+                element={
+                  <AuthorGuard>
+                    <WriteChapterPage />
+                  </AuthorGuard>
+                }
+              />
+
+              {/* ADMIN */}
+              <Route
                 path="/admin/dashboard"
                 element={
                   <AdminGuard>
@@ -75,6 +203,7 @@ function App() {
                   </AdminGuard>
                 }
               />
+
               <Route
                 path="/admin/users"
                 element={
@@ -83,14 +212,7 @@ function App() {
                   </AdminGuard>
                 }
               />
-              <Route
-                path="/admin"
-                element={
-                  <AdminGuard>
-                    <AdminDashboardPage />
-                  </AdminGuard>
-                }
-              />
+
               <Route
                 path="/admin/novels"
                 element={
@@ -99,28 +221,37 @@ function App() {
                   </AdminGuard>
                 }
               />
-              <Route path="/author/create-novel" element={<AuthorGuard><CreateNovelPage /></AuthorGuard>} />
-              <Route path="/author/manage-novels" element={<AuthorGuard><ManageNovelsPage /></AuthorGuard>} />
-              <Route path="/author/edit-novel/:id" element={<AuthorGuard><EditNovelPage /></AuthorGuard>} />
+
               <Route
-path="/author/manage-chapters/:novelId"
-  element={
-    <AuthorGuard>
-      <ManageChaptersPage />
-    </AuthorGuard>
-  }
-/>
+                path="/admin/chapters"
+                element={
+                  <AdminGuard>
+                    <AdminChaptersPage />
+                  </AdminGuard>
+                }
+              />
+
               <Route
-  path="/author/edit-chapter/:chapterId"
-  element={
-    <AuthorGuard>
-      <EditChapterPage />
-    </AuthorGuard>
-  }
-/>
-              <Route path="/author/write-chapter" element={<AuthorGuard><WriteChapterPage /></AuthorGuard>} />
+                path="/admin/comments"
+                element={
+                  <AdminGuard>
+                    <AdminCommentsPage />
+                  </AdminGuard>
+                }
+              />
+
+              <Route
+                path="/admin"
+                element={
+                  <AdminGuard>
+                    <AdminDashboardPage />
+                  </AdminGuard>
+                }
+              />
+
             </Routes>
           </main>
+
           <Footer />
           <MobileNavbar />
           <Toaster />

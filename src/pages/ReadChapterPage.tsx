@@ -35,6 +35,28 @@ interface ReadingProgress {
   updated_at: string;
 }
 
+interface ChapterComment {
+  id: string;
+  user_id: string;
+  novel_id: string;
+  chapter_id: string | null;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  parent_id: string | null;
+}
+
+interface CommentNode extends ChapterComment {
+  children: CommentNode[];
+}
+
+interface CommentProfile {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+  avatar: string | null;
+}
+
 export default function ReadChapterPage() {
   const { chapterId } = useParams<{ chapterId: string }>();
   const navigate = useNavigate();
@@ -42,6 +64,25 @@ export default function ReadChapterPage() {
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [novel, setNovel] = useState<Novel | null>(null);
 
+  const [comments, setComments] = useState<ChapterComment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsError, setCommentsError] = useState("");
+  const [commentTree, setCommentTree] =
+    useState<CommentNode[]>([]);
+  const [replyingTo, setReplyingTo] =
+    useState<ChapterComment | null>(null);
+
+  const [commentText, setCommentText] =
+    useState("");
+
+  const [commentProfiles, setCommentProfiles] =
+    useState<Record<string, CommentProfile>>({});
+
+  useEffect(() => {
+    setCommentTree(
+      buildCommentTree(comments),
+    );
+  }, [comments]);
   const [previousChapter, setPreviousChapter] =
     useState<Chapter | null>(null);
 
@@ -165,6 +206,234 @@ export default function ReadChapterPage() {
       console.error(
         "Kesalahan saat menyimpan progress:",
         err,
+      );
+    }
+  }
+
+  // ===========================================================
+  // LOAD COMMENTS CHAPTER
+  // ===========================================================
+
+  async function loadComments(
+    chapterId: string,
+  ) {
+    setCommentsLoading(true);
+    setCommentsError("");
+
+    try {
+      const {
+        data,
+        error: commentsFetchError,
+      } = await supabase
+        .from("comments")
+        .select(
+          "id, user_id, novel_id, chapter_id, content, created_at, updated_at, parent_id",
+        )
+        .eq("chapter_id", chapterId)
+        .order("created_at", {
+          ascending: true,
+        });
+
+      if (commentsFetchError) {
+        console.error(
+          "Gagal mengambil komentar:",
+          commentsFetchError,
+        );
+
+        setCommentsError(
+          commentsFetchError.message,
+        );
+
+        return;
+      }
+
+      const loadedComments =
+        (data ?? []) as ChapterComment[];
+
+      const userIds = [
+        ...new Set(
+          loadedComments
+            .map((comment) => comment.user_id)
+            .filter(Boolean),
+        ),
+      ];
+
+      if (userIds.length > 0) {
+        const {
+          data: profileData,
+          error: profileError,
+        } = await supabase
+          .from("profiles")
+          .select(
+            "id, username, display_name, avatar",
+          )
+          .in("id", userIds);
+
+        if (profileError) {
+          console.error(
+            "Gagal mengambil profil komentar:",
+            profileError,
+          );
+        } else {
+          const profileMap: Record<
+            string,
+            CommentProfile
+          > = {};
+
+          (profileData ?? []).forEach(
+            (profile) => {
+              profileMap[profile.id] =
+                profile as CommentProfile;
+            },
+          );
+
+          setCommentProfiles(
+            profileMap,
+          );
+        }
+      }
+
+      setComments(
+        (data ?? []) as ChapterComment[],
+      );
+    } catch (err) {
+      console.error(
+        "Kesalahan saat mengambil komentar:",
+        err,
+      );
+
+      setCommentsError(
+        err instanceof Error
+          ? err.message
+          : "Terjadi kesalahan saat mengambil komentar.",
+      );
+    } finally {
+      setCommentsLoading(false);
+    }
+  }
+
+  function buildCommentTree(
+    commentList: ChapterComment[],
+  ): CommentNode[] {
+    const commentMap =
+      new Map<string, CommentNode>();
+
+    const roots: CommentNode[] = [];
+
+    for (const comment of commentList) {
+      commentMap.set(
+        comment.id,
+        {
+          ...comment,
+          children: [],
+        },
+      );
+    }
+
+    for (const comment of commentList) {
+      const node =
+        commentMap.get(comment.id);
+
+      if (!node) continue;
+
+      if (
+        comment.parent_id &&
+        commentMap.has(comment.parent_id)
+      ) {
+        const parent =
+          commentMap.get(
+            comment.parent_id,
+          );
+
+        if (parent) {
+          parent.children.push(node);
+        }
+      } else {
+        roots.push(node);
+      }
+    }
+
+    return roots;
+  }
+
+  // ===========================================================
+  // KIRIM KOMENTAR / BALASAN
+  // ===========================================================
+
+  async function submitComment() {
+    const content =
+      commentText.trim();
+
+    if (!content || !chapter || !novel) {
+      return;
+    }
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        console.error(
+          "Gagal mendapatkan user:",
+          userError,
+        );
+
+        return;
+      }
+
+      if (!user) {
+        setCommentsError(
+          "Silakan login terlebih dahulu untuk berkomentar.",
+        );
+
+        return;
+      }
+
+      const { error: insertError } =
+        await supabase
+          .from("comments")
+          .insert({
+            user_id: user.id,
+            novel_id: novel.id,
+            chapter_id: chapter.id,
+            content,
+            parent_id:
+              replyingTo?.id ?? null,
+          });
+
+      if (insertError) {
+        console.error(
+          "Gagal mengirim komentar:",
+          insertError,
+        );
+
+        setCommentsError(
+          insertError.message,
+        );
+
+        return;
+      }
+
+      // Bersihkan form setelah berhasil.
+      setCommentText("");
+      setReplyingTo(null);
+      setCommentsError("");
+
+      // Ambil ulang komentar agar balasan
+      // langsung masuk ke posisi yang benar.
+      await loadComments(chapter.id);
+    } catch (err) {
+      console.error(
+        "Kesalahan saat mengirim komentar:",
+        err,
+      );
+
+      setCommentsError(
+        err instanceof Error
+          ? err.message
+          : "Terjadi kesalahan saat mengirim komentar.",
       );
     }
   }
@@ -469,6 +738,10 @@ export default function ReadChapterPage() {
 
         setNovel(
           currentNovel,
+        );
+
+        void loadComments(
+          currentChapter.id,
         );
 
         currentChapterRef.current =
@@ -796,6 +1069,100 @@ export default function ReadChapterPage() {
     };
   }, [chapterId]);
 
+  function renderComment(
+    comment: CommentNode,
+    level = 0,
+  ): JSX.Element {
+    return (
+      <div
+        key={comment.id}
+        className={
+          level > 0
+            ? "ml-6 border-l border-border pl-4 sm:ml-8"
+            : ""
+        }
+      >
+        <div className="rounded-xl border border-border bg-card p-4">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium text-foreground">
+              {(() => {
+                const profile =
+                  commentProfiles[comment.user_id];
+
+                return (
+                  profile?.display_name ||
+                  profile?.username ||
+                  "Pengguna"
+                );
+              })()}
+            </span>
+
+            <span className="text-xs text-muted-foreground">
+              {new Date(
+                comment.created_at,
+              ).toLocaleString("id-ID")}
+            </span>
+          </div>
+
+          <p className="mt-2 whitespace-pre-line text-sm leading-6 text-foreground">
+            {comment.content}
+          </p>
+
+          {replyingTo?.id === comment.id && (
+            <div className="mt-3">
+              <textarea
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                placeholder="Tulis balasan..."
+                rows={3}
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              />
+              <div className="mt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setReplyingTo(null)}
+                  className="text-xs text-muted-foreground"
+                >
+                  Batal
+                </button>
+                <Button
+                  type="button"
+                  disabled={!commentText.trim()}
+                  onClick={() => void submitComment()}
+                >
+                  Kirim Balasan
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="mt-3 text-xs font-medium text-primary hover:underline"
+            onClick={() => {
+              setReplyingTo(comment);
+            }}
+          >
+            Balas
+          </button>
+        </div>
+
+        {comment.children.length > 0 && (
+          <div className="mt-3 space-y-3">
+            {comment.children.map(
+              (child) =>
+                renderComment(
+                  child,
+                  level + 1,
+                ),
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+
   // ===========================================================
   // LOADING
   // ===========================================================
@@ -953,6 +1320,89 @@ export default function ReadChapterPage() {
               ),
             )}
         </article>
+
+        {/* ===================================================
+            KOMENTAR CHAPTER
+        ==================================================== */}
+
+        <section className="mt-14 border-t border-border pt-8">
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-foreground">
+              Komentar
+            </h2>
+
+            <p className="mt-1 text-sm text-muted-foreground">
+              Bagikan pendapatmu tentang chapter ini.
+            </p>
+          </div>
+
+          {/* FORM KOMENTAR */}
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <textarea
+              value={commentText}
+              onChange={(event) => {
+                setCommentText(
+                  event.target.value,
+                );
+              }}
+              placeholder={
+                replyingTo
+                  ? "Tulis balasan..."
+                  : "Tulis komentar..."
+              }
+              rows={4}
+              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-3 text-sm outline-none transition focus:border-primary"
+            />
+
+            <div className="mt-3 flex justify-end">
+              <Button
+                type="button"
+                onClick={() => {
+                  void submitComment();
+                }}
+                disabled={
+                  !commentText.trim()
+                }
+              >
+                {replyingTo
+                  ? "Kirim Balasan"
+                  : "Kirim Komentar"}
+              </Button>
+            </div>
+          </div>
+
+          {/* ERROR */}
+          {commentsError && (
+            <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              {commentsError}
+            </div>
+          )}
+
+          {/* DAFTAR KOMENTAR */}
+          <div className="mt-6">
+            {commentsLoading ? (
+              <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                <Loader2
+                  size={18}
+                  className="mr-2 animate-spin"
+                />
+
+                Memuat komentar...
+              </div>
+            ) : commentTree.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                Belum ada komentar.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {commentTree.map(
+                  (comment) =>
+                    renderComment(comment),
+                )}
+              </div>
+            )}
+          </div>
+        </section>
 
         {/* ===================================================
             NAVIGASI CHAPTER
