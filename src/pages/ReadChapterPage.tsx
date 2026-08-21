@@ -8,8 +8,12 @@ import {
   Loader2,
 } from "lucide-react";
 
-import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/lib/supabase";
+
+// ===========================================================
+// TYPES
+// ===========================================================
 
 interface Chapter {
   id: string;
@@ -57,85 +61,181 @@ interface CommentProfile {
   avatar: string | null;
 }
 
+// ===========================================================
+// CONSTANTS
+// ===========================================================
+
+const RESTORE_PROGRESS_PREFIX = "restore_reading_progress_";
+const LAST_READ_PREFIX = "last_read_chapter_";
+const VIEW_PREFIX = "novel_view_";
+
+// ===========================================================
+// COMPONENT
+// ===========================================================
+
 export default function ReadChapterPage() {
   const { chapterId } = useParams<{ chapterId: string }>();
   const navigate = useNavigate();
 
+  // =========================================================
+  // CHAPTER / NOVEL
+  // =========================================================
+
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [novel, setNovel] = useState<Novel | null>(null);
 
-  const [comments, setComments] = useState<ChapterComment[]>([]);
-  const [commentsLoading, setCommentsLoading] = useState(false);
-  const [commentsError, setCommentsError] = useState("");
-  const [commentTree, setCommentTree] =
-    useState<CommentNode[]>([]);
-  const [replyingTo, setReplyingTo] =
-    useState<ChapterComment | null>(null);
-
-  const [commentText, setCommentText] =
-    useState("");
-
-  const [commentProfiles, setCommentProfiles] =
-    useState<Record<string, CommentProfile>>({});
-
-  useEffect(() => {
-    setCommentTree(
-      buildCommentTree(comments),
-    );
-  }, [comments]);
   const [previousChapter, setPreviousChapter] =
     useState<Chapter | null>(null);
 
   const [nextChapter, setNextChapter] =
     useState<Chapter | null>(null);
 
-  const [readingProgress, setReadingProgress] =
-    useState(0);
+  // =========================================================
+  // PAGE STATE
+  // =========================================================
 
+  const [readingProgress, setReadingProgress] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // =========================================================
+  // COMMENTS
+  // =========================================================
+
+  const [comments, setComments] = useState<ChapterComment[]>([]);
+  const [commentTree, setCommentTree] = useState<CommentNode[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsError, setCommentsError] = useState("");
+
+  const [commentProfiles, setCommentProfiles] = useState<
+    Record<string, CommentProfile>
+  >({});
+
+  const [commentText, setCommentText] = useState("");
+
+  const [replyingTo, setReplyingTo] =
+    useState<ChapterComment | null>(null);
+
+  const [deletingCommentId, setDeletingCommentId] =
+    useState<string | null>(null);
+
+  // =========================================================
+  // REFS
+  // =========================================================
 
   const saveTimerRef =
     useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const latestProgressRef = useRef(0);
 
-  const restoreProgressRef = useRef(false);
-
-  // Menyimpan chapter dan novel yang sedang aktif.
-  // Berguna ketika melakukan save progress saat halaman ditinggalkan.
   const currentChapterRef =
     useRef<Chapter | null>(null);
 
   const currentNovelRef =
     useRef<Novel | null>(null);
 
-  // ===========================================================
-  // CEK MODE "LANJUT MEMBACA"
-  // ===========================================================
+  /**
+   * Menandakan bahwa chapter saat ini memang harus
+   * mengembalikan posisi bacaan yang tersimpan.
+   */
+  const restoreProgressRef = useRef(false);
+
+  /**
+   * Digunakan untuk mencegah hasil request lama
+   * memengaruhi chapter yang sudah berubah.
+   */
+  const requestIdRef = useRef(0);
+
+  // =========================================================
+  // COMMENT TREE
+  // =========================================================
+
+  function buildCommentTree(
+    commentList: ChapterComment[],
+  ): CommentNode[] {
+    const commentMap = new Map<string, CommentNode>();
+
+    for (const comment of commentList) {
+      commentMap.set(comment.id, {
+        ...comment,
+        children: [],
+      });
+    }
+
+    const roots: CommentNode[] = [];
+
+    for (const comment of commentList) {
+      const node = commentMap.get(comment.id);
+
+      if (!node) continue;
+
+      if (!comment.parent_id) {
+        roots.push(node);
+      }
+    }
+
+    /**
+     * Semua balasan dimasukkan ke parent langsungnya.
+     *
+     * Karena submitComment() menggunakan parent_id
+     * dari komentar induk ketika membalas komentar tingkat 2,
+     * struktur maksimum hanya 2 tingkat.
+     */
+    for (const comment of commentList) {
+      if (!comment.parent_id) continue;
+
+      const child = commentMap.get(comment.id);
+      const parent = commentMap.get(comment.parent_id);
+
+      if (!child || !parent) continue;
+
+      parent.children.push(child);
+    }
+
+    roots.sort(
+      (a, b) =>
+        new Date(a.created_at).getTime() -
+        new Date(b.created_at).getTime(),
+    );
+
+    for (const root of roots) {
+      root.children.sort(
+        (a, b) =>
+          new Date(a.created_at).getTime() -
+          new Date(b.created_at).getTime(),
+      );
+    }
+
+    return roots;
+  }
+
+  useEffect(() => {
+    setCommentTree(buildCommentTree(comments));
+  }, [comments]);
+
+  // =========================================================
+  // DETERMINE RESTORE MODE
+  // =========================================================
 
   useEffect(() => {
     if (!chapterId) return;
 
     const restoreKey =
-      `restore_reading_progress_${chapterId}`;
+      `${RESTORE_PROGRESS_PREFIX}${chapterId}`;
 
     const shouldRestore =
       sessionStorage.getItem(restoreKey) === "true";
 
-    restoreProgressRef.current =
-      shouldRestore;
+    restoreProgressRef.current = shouldRestore;
 
     if (shouldRestore) {
-      sessionStorage.removeItem(
-        restoreKey,
-      );
+      sessionStorage.removeItem(restoreKey);
     }
   }, [chapterId]);
 
-  // ===========================================================
-  // SIMPAN PROGRESS KE SUPABASE
-  // ===========================================================
+  // =========================================================
+  // SAVE READING PROGRESS
+  // =========================================================
 
   async function saveReadingProgress(
     progressValue: number,
@@ -143,12 +243,10 @@ export default function ReadChapterPage() {
     novelOverride?: Novel | null,
   ) {
     const currentChapter =
-      chapterOverride ??
-      currentChapterRef.current;
+      chapterOverride ?? currentChapterRef.current;
 
     const currentNovel =
-      novelOverride ??
-      currentNovelRef.current;
+      novelOverride ?? currentNovelRef.current;
 
     if (!currentChapter || !currentNovel) {
       return;
@@ -172,10 +270,7 @@ export default function ReadChapterPage() {
 
       const progress = Math.max(
         0,
-        Math.min(
-          100,
-          Math.round(progressValue),
-        ),
+        Math.min(100, Math.round(progressValue)),
       );
 
       const { error: progressError } =
@@ -187,12 +282,10 @@ export default function ReadChapterPage() {
               novel_id: currentNovel.id,
               chapter_id: currentChapter.id,
               progress,
-              updated_at:
-                new Date().toISOString(),
+              updated_at: new Date().toISOString(),
             },
             {
-              onConflict:
-                "user_id,chapter_id",
+              onConflict: "user_id,chapter_id",
             },
           );
 
@@ -210,12 +303,12 @@ export default function ReadChapterPage() {
     }
   }
 
-  // ===========================================================
-  // LOAD COMMENTS CHAPTER
-  // ===========================================================
+  // =========================================================
+  // LOAD COMMENTS
+  // =========================================================
 
   async function loadComments(
-    chapterId: string,
+    targetChapterId: string,
   ) {
     setCommentsLoading(true);
     setCommentsError("");
@@ -227,9 +320,19 @@ export default function ReadChapterPage() {
       } = await supabase
         .from("comments")
         .select(
-          "id, user_id, novel_id, chapter_id, content, created_at, updated_at, parent_id",
+          [
+            "id",
+            "user_id",
+            "novel_id",
+            "chapter_id",
+            "content",
+            "created_at",
+            "updated_at",
+            "parent_id",
+          ].join(", "),
         )
-        .eq("chapter_id", chapterId)
+        .eq("chapter_id", targetChapterId)
+        .eq("is_blocked", false)
         .order("created_at", {
           ascending: true,
         });
@@ -250,6 +353,8 @@ export default function ReadChapterPage() {
       const loadedComments =
         (data ?? []) as ChapterComment[];
 
+      setComments(loadedComments);
+
       const userIds = [
         ...new Set(
           loadedComments
@@ -258,44 +363,41 @@ export default function ReadChapterPage() {
         ),
       ];
 
-      if (userIds.length > 0) {
-        const {
-          data: profileData,
-          error: profileError,
-        } = await supabase
-          .from("profiles")
-          .select(
-            "id, username, display_name, avatar",
-          )
-          .in("id", userIds);
-
-        if (profileError) {
-          console.error(
-            "Gagal mengambil profil komentar:",
-            profileError,
-          );
-        } else {
-          const profileMap: Record<
-            string,
-            CommentProfile
-          > = {};
-
-          (profileData ?? []).forEach(
-            (profile) => {
-              profileMap[profile.id] =
-                profile as CommentProfile;
-            },
-          );
-
-          setCommentProfiles(
-            profileMap,
-          );
-        }
+      if (userIds.length === 0) {
+        setCommentProfiles({});
+        return;
       }
 
-      setComments(
-        (data ?? []) as ChapterComment[],
-      );
+      const {
+        data: profileData,
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .select(
+          "id, username, display_name, avatar",
+        )
+        .in("id", userIds);
+
+      if (profileError) {
+        console.error(
+          "Gagal mengambil profil komentar:",
+          profileError,
+        );
+
+        return;
+      }
+
+      const profileMap: Record<
+        string,
+        CommentProfile
+      > = {};
+
+      for (const profile of profileData ?? []) {
+        profileMap[profile.id] =
+          profile as CommentProfile;
+      }
+
+      setCommentProfiles(profileMap);
     } catch (err) {
       console.error(
         "Kesalahan saat mengambil komentar:",
@@ -312,57 +414,39 @@ export default function ReadChapterPage() {
     }
   }
 
-  function buildCommentTree(
-    commentList: ChapterComment[],
-  ): CommentNode[] {
-    const commentMap =
-      new Map<string, CommentNode>();
+  // =========================================================
+  // COMMENT PARENT
+  // =========================================================
 
-    const roots: CommentNode[] = [];
-
-    for (const comment of commentList) {
-      commentMap.set(
-        comment.id,
-        {
-          ...comment,
-          children: [],
-        },
-      );
+  function getCommentParentId(
+    target: ChapterComment | null,
+  ): string | null {
+    if (!target) {
+      return null;
     }
 
-    for (const comment of commentList) {
-      const node =
-        commentMap.get(comment.id);
-
-      if (!node) continue;
-
-      if (
-        comment.parent_id &&
-        commentMap.has(comment.parent_id)
-      ) {
-        const parent =
-          commentMap.get(
-            comment.parent_id,
-          );
-
-        if (parent) {
-          parent.children.push(node);
-        }
-      } else {
-        roots.push(node);
-      }
+    /**
+     * Jika membalas komentar induk:
+     * parent_id = id komentar induk.
+     *
+     * Jika membalas komentar tingkat 2:
+     * parent_id = parent_id miliknya.
+     *
+     * Dengan demikian tidak ada tingkat 3.
+     */
+    if (!target.parent_id) {
+      return target.id;
     }
 
-    return roots;
+    return target.parent_id;
   }
 
-  // ===========================================================
-  // KIRIM KOMENTAR / BALASAN
-  // ===========================================================
+  // =========================================================
+  // SUBMIT COMMENT
+  // =========================================================
 
   async function submitComment() {
-    const content =
-      commentText.trim();
+    const content = commentText.trim();
 
     if (!content || !chapter || !novel) {
       return;
@@ -379,7 +463,6 @@ export default function ReadChapterPage() {
           "Gagal mendapatkan user:",
           userError,
         );
-
         return;
       }
 
@@ -387,9 +470,11 @@ export default function ReadChapterPage() {
         setCommentsError(
           "Silakan login terlebih dahulu untuk berkomentar.",
         );
-
         return;
       }
+
+      const parentId =
+        getCommentParentId(replyingTo);
 
       const { error: insertError } =
         await supabase
@@ -399,8 +484,7 @@ export default function ReadChapterPage() {
             novel_id: novel.id,
             chapter_id: chapter.id,
             content,
-            parent_id:
-              replyingTo?.id ?? null,
+            parent_id: parentId,
           });
 
       if (insertError) {
@@ -416,13 +500,10 @@ export default function ReadChapterPage() {
         return;
       }
 
-      // Bersihkan form setelah berhasil.
       setCommentText("");
       setReplyingTo(null);
       setCommentsError("");
 
-      // Ambil ulang komentar agar balasan
-      // langsung masuk ke posisi yang benar.
       await loadComments(chapter.id);
     } catch (err) {
       console.error(
@@ -438,165 +519,145 @@ export default function ReadChapterPage() {
     }
   }
 
-  // ===========================================================
-  // RESET SCROLL SAAT CHAPTER BERUBAH
-  // ===========================================================
+  // =========================================================
+  // DELETE COMMENT
+  // =========================================================
 
-  useEffect(() => {
-    if (!chapterId) return;
+  async function deleteComment(
+    comment: ChapterComment,
+  ) {
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-    /*
-     * Chapter baru selalu mulai dari atas,
-     * kecuali dibuka melalui tombol "Lanjut Membaca".
-     */
-    if (!restoreProgressRef.current) {
-      window.scrollTo({
-        top: 0,
-        behavior: "auto",
-      });
+      if (userError) {
+        console.error(
+          "Gagal mendapatkan user:",
+          userError,
+        );
+        return;
+      }
 
-      setReadingProgress(0);
-      latestProgressRef.current = 0;
-    }
-  }, [chapterId]);
+      if (!user) {
+        setCommentsError(
+          "Silakan login terlebih dahulu.",
+        );
+        return;
+      }
 
-  // ===========================================================
-  // HITUNG DAN SIMPAN PROGRESS SCROLL
-  // ===========================================================
+      if (comment.user_id !== user.id) {
+        setCommentsError(
+          "Kamu hanya dapat menghapus komentar milikmu sendiri.",
+        );
+        return;
+      }
 
-  useEffect(() => {
-    if (!chapter || !novel) return;
+      const confirmed = window.confirm(
+        "Hapus komentar ini?",
+      );
 
-    currentChapterRef.current =
-      chapter;
+      if (!confirmed) {
+        return;
+      }
 
-    currentNovelRef.current =
-      novel;
+      setDeletingCommentId(comment.id);
+      setCommentsError("");
 
-    function handleScroll() {
-      const documentHeight =
-        document.documentElement.scrollHeight;
+      const { error: deleteError } =
+        await supabase
+          .from("comments")
+          .delete()
+          .eq("id", comment.id)
+          .eq("user_id", user.id);
 
-      const windowHeight =
-        window.innerHeight;
+      if (deleteError) {
+        console.error(
+          "Gagal menghapus komentar:",
+          deleteError,
+        );
 
-      const scrollableHeight =
-        documentHeight - windowHeight;
-
-      if (scrollableHeight <= 0) {
-        latestProgressRef.current = 100;
-
-        setReadingProgress(100);
-
-        if (saveTimerRef.current) {
-          clearTimeout(
-            saveTimerRef.current,
-          );
-        }
-
-        saveTimerRef.current =
-          setTimeout(() => {
-            void saveReadingProgress(100);
-          }, 800);
+        setCommentsError(
+          deleteError.message,
+        );
 
         return;
       }
 
-      const scrollTop =
-        window.scrollY ||
-        document.documentElement.scrollTop;
-
-      const progress =
-        (scrollTop /
-          scrollableHeight) *
-        100;
-
-      const roundedProgress =
-        Math.max(
-          0,
-          Math.min(
-            100,
-            Math.round(progress),
-          ),
-        );
-
-      latestProgressRef.current =
-        roundedProgress;
-
-      setReadingProgress(
-        roundedProgress,
-      );
-
-      if (saveTimerRef.current) {
-        clearTimeout(
-          saveTimerRef.current,
-        );
+      if (replyingTo?.id === comment.id) {
+        setReplyingTo(null);
+        setCommentText("");
       }
 
-      saveTimerRef.current =
-        setTimeout(() => {
-          void saveReadingProgress(
-            roundedProgress,
-          );
-        }, 800);
+      if (chapter?.id) {
+        await loadComments(chapter.id);
+      }
+    } catch (err) {
+      console.error(
+        "Kesalahan saat menghapus komentar:",
+        err,
+      );
+
+      setCommentsError(
+        err instanceof Error
+          ? err.message
+          : "Terjadi kesalahan saat menghapus komentar.",
+      );
+    } finally {
+      setDeletingCommentId(null);
+    }
+  }
+
+  // =========================================================
+  // SCROLL HELPERS
+  // =========================================================
+
+  function resetScrollToTop() {
+    window.scrollTo({
+      top: 0,
+      behavior: "auto",
+    });
+
+    setReadingProgress(0);
+    latestProgressRef.current = 0;
+  }
+
+  function getScrollProgress(): number {
+    const documentHeight =
+      document.documentElement.scrollHeight;
+
+    const windowHeight = window.innerHeight;
+
+    const scrollableHeight =
+      documentHeight - windowHeight;
+
+    if (scrollableHeight <= 0) {
+      return 100;
     }
 
-    window.addEventListener(
-      "scroll",
-      handleScroll,
-      { passive: true },
+    const scrollTop =
+      window.scrollY ||
+      document.documentElement.scrollTop;
+
+    const progress =
+      (scrollTop / scrollableHeight) * 100;
+
+    return Math.max(
+      0,
+      Math.min(100, Math.round(progress)),
     );
+  }
 
-    // Jangan langsung menyimpan 0%
-    // ketika chapter baru saja dibuka.
-    if (
-      restoreProgressRef.current
-    ) {
-      handleScroll();
-    } else {
-      setReadingProgress(0);
-      latestProgressRef.current = 0;
-    }
-
-    return () => {
-      window.removeEventListener(
-        "scroll",
-        handleScroll,
-      );
-
-      if (saveTimerRef.current) {
-        clearTimeout(
-          saveTimerRef.current,
-        );
-
-        saveTimerRef.current = null;
-      }
-
-      /*
-       * Simpan posisi terakhir secara asynchronous.
-       */
-      void saveReadingProgress(
-        latestProgressRef.current,
-        chapter,
-        novel,
-      );
-    };
-  }, [chapter, novel]);
-
-  // ===========================================================
-  // LOAD CHAPTER
-  // ===========================================================
+  // =========================================================
+  // CHAPTER CHANGE
+  // =========================================================
 
   useEffect(() => {
-    if (!chapterId) {
-      setError(
-        "ID chapter tidak ditemukan.",
-      );
+    if (!chapterId) return;
 
-      setLoading(false);
-
-      return;
-    }
+    const currentRequestId =
+      ++requestIdRef.current;
 
     let cancelled = false;
 
@@ -604,16 +665,30 @@ export default function ReadChapterPage() {
       setLoading(true);
       setError("");
 
-      /*
-       * Reset state lama supaya tidak terlihat
-       * sebentar ketika pindah chapter.
-       */
+      setChapter(null);
+      setNovel(null);
+
       setPreviousChapter(null);
       setNextChapter(null);
 
+      setComments([]);
+      setCommentTree([]);
+      setCommentProfiles({});
+      setReplyingTo(null);
+      setCommentText("");
+      setCommentsError("");
+
+      /**
+       * Reset posisi hanya jika chapter baru
+       * tidak membutuhkan restore progress.
+       */
+      if (!restoreProgressRef.current) {
+        resetScrollToTop();
+      }
+
       try {
         // =====================================================
-        // 1. AMBIL CHAPTER UTAMA
+        // 1. FETCH CHAPTER
         // =====================================================
 
         const {
@@ -622,13 +697,26 @@ export default function ReadChapterPage() {
         } = await supabase
           .from("chapters")
           .select(
-            "id, novel_id, title, chapter_number, content, published, word_count",
+            [
+              "id",
+              "novel_id",
+              "title",
+              "chapter_number",
+              "content",
+              "published",
+              "word_count",
+            ].join(", "),
           )
           .eq("id", chapterId)
           .eq("published", true)
           .maybeSingle();
 
-        if (cancelled) return;
+        if (
+          cancelled ||
+          currentRequestId !== requestIdRef.current
+        ) {
+          return;
+        }
 
         if (chapterError) {
           console.error(
@@ -636,12 +724,8 @@ export default function ReadChapterPage() {
             chapterError,
           );
 
-          setError(
-            chapterError.message,
-          );
-
+          setError(chapterError.message);
           setLoading(false);
-
           return;
         }
 
@@ -649,9 +733,7 @@ export default function ReadChapterPage() {
           setError(
             "Chapter tidak ditemukan atau belum diterbitkan.",
           );
-
           setLoading(false);
-
           return;
         }
 
@@ -659,29 +741,16 @@ export default function ReadChapterPage() {
           chapterData as Chapter;
 
         // =====================================================
-        // 2. AMBIL DATA NOVEL
+        // 2. FETCH NOVEL + USER
         // =====================================================
 
-        const novelPromise =
-          supabase
-            .from("novels")
-            .select(
-              "id, title, cover",
-            )
-            .eq(
-              "id",
-              currentChapter.novel_id,
-            )
-            .eq(
-              "visibility",
-              "public",
-            )
-            .maybeSingle();
+        const novelPromise = supabase
+          .from("novels")
+          .select("id, title, cover")
+          .eq("id", currentChapter.novel_id)
+          .eq("visibility", "public")
+          .maybeSingle();
 
-        /*
-         * Jalankan user request bersamaan
-         * dengan request novel.
-         */
         const userPromise =
           supabase.auth.getUser();
 
@@ -693,7 +762,12 @@ export default function ReadChapterPage() {
           userPromise,
         ]);
 
-        if (cancelled) return;
+        if (
+          cancelled ||
+          currentRequestId !== requestIdRef.current
+        ) {
+          return;
+        }
 
         const {
           data: novelData,
@@ -706,12 +780,8 @@ export default function ReadChapterPage() {
             novelError,
           );
 
-          setError(
-            novelError.message,
-          );
-
+          setError(novelError.message);
           setLoading(false);
-
           return;
         }
 
@@ -719,9 +789,7 @@ export default function ReadChapterPage() {
           setError(
             "Novel tidak ditemukan atau tidak tersedia.",
           );
-
           setLoading(false);
-
           return;
         }
 
@@ -729,20 +797,11 @@ export default function ReadChapterPage() {
           novelData as Novel;
 
         // =====================================================
-        // 3. TAMPILKAN CHAPTER SECEPATNYA
+        // 3. SET CURRENT DATA
         // =====================================================
 
-        setChapter(
-          currentChapter,
-        );
-
-        setNovel(
-          currentNovel,
-        );
-
-        void loadComments(
-          currentChapter.id,
-        );
+        setChapter(currentChapter);
+        setNovel(currentNovel);
 
         currentChapterRef.current =
           currentChapter;
@@ -751,29 +810,26 @@ export default function ReadChapterPage() {
           currentNovel;
 
         localStorage.setItem(
-          `last_read_chapter_${currentChapter.novel_id}`,
+          `${LAST_READ_PREFIX}${currentChapter.novel_id}`,
           currentChapter.id,
         );
 
-        /*
-         * Sangat penting:
-         *
-         * Kita tidak menunggu reading_progress,
-         * views, dan navigasi sebelum menampilkan
-         * chapter.
-         */
         setLoading(false);
 
         // =====================================================
-        // 4. RESET KE ATAS UNTUK CHAPTER BARU
+        // 4. RESET SCROLL FOR NEW CHAPTER
         // =====================================================
 
         if (!restoreProgressRef.current) {
-          setReadingProgress(0);
-
-          latestProgressRef.current = 0;
-
           requestAnimationFrame(() => {
+            if (
+              cancelled ||
+              currentRequestId !==
+                requestIdRef.current
+            ) {
+              return;
+            }
+
             window.scrollTo({
               top: 0,
               behavior: "auto",
@@ -782,8 +838,13 @@ export default function ReadChapterPage() {
         }
 
         // =====================================================
-        // 5. READING PROGRESS
-        //    BERJALAN DI BELAKANG
+        // 5. LOAD COMMENTS
+        // =====================================================
+
+        void loadComments(currentChapter.id);
+
+        // =====================================================
+        // 6. RESTORE READING PROGRESS
         // =====================================================
 
         const user =
@@ -793,46 +854,39 @@ export default function ReadChapterPage() {
           user &&
           restoreProgressRef.current
         ) {
-          void (async () => {
-            const {
-              data: progressData,
-              error: progressError,
-            } = await supabase
-              .from(
-                "reading_progress",
-              )
-              .select(
-                "user_id, novel_id, chapter_id, progress, updated_at",
-              )
-              .eq(
-                "user_id",
-                user.id,
-              )
-              .eq(
-                "novel_id",
-                currentNovel.id,
-              )
-              .eq(
-                "chapter_id",
-                currentChapter.id,
-              )
-              .maybeSingle();
+          const {
+            data: progressData,
+            error: progressError,
+          } = await supabase
+            .from("reading_progress")
+            .select(
+              "user_id, novel_id, chapter_id, progress, updated_at",
+            )
+            .eq("user_id", user.id)
+            .eq(
+              "novel_id",
+              currentNovel.id,
+            )
+            .eq(
+              "chapter_id",
+              currentChapter.id,
+            )
+            .maybeSingle();
 
-            if (cancelled) return;
+          if (
+            cancelled ||
+            currentRequestId !==
+              requestIdRef.current
+          ) {
+            return;
+          }
 
-            if (progressError) {
-              console.error(
-                "Gagal mengambil progress:",
-                progressError,
-              );
-
-              return;
-            }
-
-            if (!progressData) {
-              return;
-            }
-
+          if (progressError) {
+            console.error(
+              "Gagal mengambil progress:",
+              progressError,
+            );
+          } else if (progressData) {
             const savedProgress =
               Math.max(
                 0,
@@ -853,79 +907,98 @@ export default function ReadChapterPage() {
             latestProgressRef.current =
               savedProgress;
 
-            /*
-             * Tunggu rendering selesai,
-             * kemudian pulihkan posisi.
+            /**
+             * Tunggu browser menyelesaikan render
+             * isi chapter sebelum menghitung tinggi dokumen.
              */
-            setTimeout(() => {
-              if (cancelled) return;
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                if (
+                  cancelled ||
+                  currentRequestId !==
+                    requestIdRef.current
+                ) {
+                  return;
+                }
 
-              const documentHeight =
-                document.documentElement
-                  .scrollHeight;
+                const documentHeight =
+                  document.documentElement
+                    .scrollHeight;
 
-              const windowHeight =
-                window.innerHeight;
+                const windowHeight =
+                  window.innerHeight;
 
-              const scrollableHeight =
-                documentHeight -
-                windowHeight;
+                const scrollableHeight =
+                  documentHeight -
+                  windowHeight;
 
-              if (
-                scrollableHeight > 0
-              ) {
+                if (
+                  scrollableHeight <= 0
+                ) {
+                  window.scrollTo({
+                    top: 0,
+                    behavior: "auto",
+                  });
+
+                  return;
+                }
+
+                const targetPosition =
+                  (savedProgress / 100) *
+                  scrollableHeight;
+
                 window.scrollTo({
-                  top:
-                    (savedProgress /
-                      100) *
-                    scrollableHeight,
-                  behavior:
-                    "auto",
+                  top: targetPosition,
+                  behavior: "auto",
                 });
-              }
-            }, 100);
-          })();
+              });
+            });
+          }
         }
 
         // =====================================================
-        // 6. NAVIGASI CHAPTER
-        //    BERJALAN DI BELAKANG
+        // 7. NAVIGATION
         // =====================================================
 
         void (async () => {
           const {
-            data:
-              publishedChapters,
-            error:
-              navigationError,
+            data: publishedChapters,
+            error: navigationError,
           } = await supabase
             .from("chapters")
             .select(
-              "id, novel_id, title, chapter_number, content, published, word_count",
+              [
+                "id",
+                "novel_id",
+                "title",
+                "chapter_number",
+                "content",
+                "published",
+                "word_count",
+              ].join(", "),
             )
             .eq(
               "novel_id",
               currentChapter.novel_id,
             )
-            .eq(
-              "published",
-              true,
-            )
-            .order(
-              "chapter_number",
-              {
-                ascending: true,
-              },
-            );
+            .eq("published", true)
+            .order("chapter_number", {
+              ascending: true,
+            });
 
-          if (cancelled) return;
+          if (
+            cancelled ||
+            currentRequestId !==
+              requestIdRef.current
+          ) {
+            return;
+          }
 
           if (navigationError) {
             console.error(
               "Gagal mengambil navigasi chapter:",
               navigationError,
             );
-
             return;
           }
 
@@ -940,9 +1013,7 @@ export default function ReadChapterPage() {
                 currentChapter.id,
             );
 
-          if (
-            currentIndex === -1
-          ) {
+          if (currentIndex === -1) {
             return;
           }
 
@@ -956,8 +1027,7 @@ export default function ReadChapterPage() {
 
           setNextChapter(
             currentIndex <
-              allPublishedChapters.length -
-                1
+              allPublishedChapters.length - 1
               ? allPublishedChapters[
                   currentIndex + 1
                 ]
@@ -966,13 +1036,12 @@ export default function ReadChapterPage() {
         })();
 
         // =====================================================
-        // 7. TAMBAH VIEWS
-        //    BERJALAN DI BELAKANG
+        // 8. NOVEL VIEWS
         // =====================================================
 
         void (async () => {
           const viewKey =
-            `novel_view_${currentChapter.id}`;
+            `${VIEW_PREFIX}${currentChapter.id}`;
 
           const alreadyViewed =
             sessionStorage.getItem(
@@ -989,20 +1058,22 @@ export default function ReadChapterPage() {
           } = await supabase
             .from("novels")
             .select("views")
-            .eq(
-              "id",
-              currentNovel.id,
-            )
+            .eq("id", currentNovel.id)
             .maybeSingle();
 
-          if (cancelled) return;
+          if (
+            cancelled ||
+            currentRequestId !==
+              requestIdRef.current
+          ) {
+            return;
+          }
 
           if (viewsReadError) {
             console.error(
               "Gagal membaca views:",
               viewsReadError,
             );
-
             return;
           }
 
@@ -1012,30 +1083,25 @@ export default function ReadChapterPage() {
 
           const currentViews =
             Number(
-              currentNovelStats.views ??
-                0,
+              currentNovelStats.views ?? 0,
             );
 
           const {
-            error:
-              viewsUpdateError,
+            error: viewsUpdateError,
           } = await supabase
             .from("novels")
             .update({
-              views:
-                currentViews + 1,
+              views: currentViews + 1,
             })
-            .eq(
-              "id",
-              currentNovel.id,
-            );
+            .eq("id", currentNovel.id);
 
-          if (viewsUpdateError) {
+          if (
+            viewsUpdateError
+          ) {
             console.error(
               "Gagal menambahkan views:",
               viewsUpdateError,
             );
-
             return;
           }
 
@@ -1050,7 +1116,11 @@ export default function ReadChapterPage() {
           err,
         );
 
-        if (!cancelled) {
+        if (
+          !cancelled &&
+          currentRequestId ===
+            requestIdRef.current
+        ) {
           setError(
             err instanceof Error
               ? err.message
@@ -1069,92 +1139,400 @@ export default function ReadChapterPage() {
     };
   }, [chapterId]);
 
+  // =========================================================
+  // SCROLL / PROGRESS
+  // =========================================================
+
+  useEffect(() => {
+    if (!chapter || !novel) {
+      return;
+    }
+
+    currentChapterRef.current =
+      chapter;
+
+    currentNovelRef.current =
+      novel;
+
+    function handleScroll() {
+      const progress =
+        getScrollProgress();
+
+      latestProgressRef.current =
+        progress;
+
+      setReadingProgress(progress);
+
+      if (saveTimerRef.current) {
+        clearTimeout(
+          saveTimerRef.current,
+        );
+      }
+
+      saveTimerRef.current =
+        setTimeout(() => {
+          void saveReadingProgress(
+            progress,
+            chapter,
+            novel,
+          );
+        }, 800);
+    }
+
+    window.addEventListener(
+      "scroll",
+      handleScroll,
+      { passive: true },
+    );
+
+    /**
+     * Saat chapter baru dimuat tanpa restore,
+     * progress harus tetap 0.
+     */
+    if (!restoreProgressRef.current) {
+      setReadingProgress(0);
+      latestProgressRef.current = 0;
+    }
+
+    return () => {
+      window.removeEventListener(
+        "scroll",
+        handleScroll,
+      );
+
+      if (saveTimerRef.current) {
+        clearTimeout(
+          saveTimerRef.current,
+        );
+
+        saveTimerRef.current = null;
+      }
+
+      /**
+       * Simpan progress terakhir sebelum
+       * chapter/page ditinggalkan.
+       */
+      void saveReadingProgress(
+        latestProgressRef.current,
+        chapter,
+        novel,
+      );
+    };
+  }, [chapter, novel]);
+
+  // =========================================================
+  // PROFILE HELPERS
+  // =========================================================
+
+  function getDisplayName(
+    userId: string,
+  ): string {
+    const profile =
+      commentProfiles[userId];
+
+    return (
+      profile?.display_name ||
+      profile?.username ||
+      "Pengguna"
+    );
+  }
+
+  // =========================================================
+  // AVATAR
+  // =========================================================
+
+  function renderAvatar(
+    profile: CommentProfile | undefined,
+    displayName: string,
+    size: "small" | "normal" = "normal",
+  ) {
+    const className =
+      size === "small"
+        ? "h-8 w-8"
+        : "h-9 w-9";
+
+    if (profile?.avatar) {
+      return (
+        <img
+          src={profile.avatar}
+          alt={displayName}
+          className={`${className} shrink-0 rounded-full object-cover`}
+        />
+      );
+    }
+
+    return (
+      <div
+        className={`flex ${className} shrink-0 items-center justify-center rounded-full bg-primary/10 ${
+          size === "small"
+            ? "text-xs"
+            : "text-sm"
+        } font-semibold text-primary`}
+      >
+        {displayName
+          .charAt(0)
+          .toUpperCase()}
+      </div>
+    );
+  }
+
+  // =========================================================
+  // COMMENT REPLY FORM
+  // =========================================================
+
+  function renderReplyForm(
+    target: ChapterComment,
+    targetName: string,
+  ) {
+    if (replyingTo?.id !== target.id) {
+      return null;
+    }
+
+    return (
+      <div className="mt-4 border-t border-border pt-4">
+        <textarea
+          value={commentText}
+          onChange={(event) =>
+            setCommentText(
+              event.target.value,
+            )
+          }
+          placeholder={`Balas ${targetName}...`}
+          rows={3}
+          className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+        />
+
+        <div className="mt-2 flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              setReplyingTo(null);
+              setCommentText("");
+            }}
+          >
+            Batal
+          </Button>
+
+          <Button
+            type="button"
+            disabled={!commentText.trim()}
+            onClick={() =>
+              void submitComment()
+            }
+          >
+            Kirim Balasan
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================
+  // RENDER COMMENT
+  // =========================================================
+
   function renderComment(
     comment: CommentNode,
-    level = 0,
   ): JSX.Element {
+    const profile =
+      commentProfiles[
+        comment.user_id
+      ];
+
+    const displayName =
+      getDisplayName(
+        comment.user_id,
+      );
+
     return (
       <div
         key={comment.id}
-        className={
-          level > 0
-            ? "ml-6 border-l border-border pl-4 sm:ml-8"
-            : ""
-        }
+        className="space-y-3"
       >
-        <div className="rounded-xl border border-border bg-card p-4">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-sm font-medium text-foreground">
-              {(() => {
-                const profile =
-                  commentProfiles[comment.user_id];
+        {/* ===================================================
+            COMMENT PARENT
+        ==================================================== */}
 
-                return (
-                  profile?.display_name ||
-                  profile?.username ||
-                  "Pengguna"
-                );
-              })()}
-            </span>
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              {renderAvatar(
+                profile,
+                displayName,
+              )}
 
-            <span className="text-xs text-muted-foreground">
-              {new Date(
-                comment.created_at,
-              ).toLocaleString("id-ID")}
-            </span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-foreground">
+                  {displayName}
+                </p>
+
+                <p className="text-xs text-muted-foreground">
+                  {new Date(
+                    comment.created_at,
+                  ).toLocaleString(
+                    "id-ID",
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              disabled={
+                deletingCommentId ===
+                comment.id
+              }
+              onClick={() =>
+                void deleteComment(
+                  comment,
+                )
+              }
+              className="shrink-0 text-xs font-medium text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
+            >
+              {deletingCommentId ===
+              comment.id
+                ? "Menghapus..."
+                : "Hapus"}
+            </button>
           </div>
 
-          <p className="mt-2 whitespace-pre-line text-sm leading-6 text-foreground">
+          <p className="mt-3 whitespace-pre-line text-sm leading-6 text-foreground">
             {comment.content}
           </p>
 
-          {replyingTo?.id === comment.id && (
-            <div className="mt-3">
-              <textarea
-                value={commentText}
-                onChange={(e) => setCommentText(e.target.value)}
-                placeholder="Tulis balasan..."
-                rows={3}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
-              />
-              <div className="mt-2 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setReplyingTo(null)}
-                  className="text-xs text-muted-foreground"
-                >
-                  Batal
-                </button>
-                <Button
-                  type="button"
-                  disabled={!commentText.trim()}
-                  onClick={() => void submitComment()}
-                >
-                  Kirim Balasan
-                </Button>
-              </div>
-            </div>
-          )}
+          <div className="mt-3">
+            <button
+              type="button"
+              className="text-xs font-semibold text-muted-foreground transition-colors hover:text-primary"
+              onClick={() => {
+                setReplyingTo(
+                  comment,
+                );
+                setCommentText("");
+              }}
+            >
+              Balas
+            </button>
+          </div>
 
-          <button
-            type="button"
-            className="mt-3 text-xs font-medium text-primary hover:underline"
-            onClick={() => {
-              setReplyingTo(comment);
-            }}
-          >
-            Balas
-          </button>
+          {renderReplyForm(
+            comment,
+            displayName,
+          )}
         </div>
 
+        {/* ===================================================
+            COMMENT CHILDREN
+        ==================================================== */}
+
         {comment.children.length > 0 && (
-          <div className="mt-3 space-y-3">
+          <div className="ml-6 space-y-3 border-l-2 border-border pl-4 sm:ml-10">
             {comment.children.map(
-              (child) =>
-                renderComment(
-                  child,
-                  level + 1,
-                ),
+              (child) => {
+                const childProfile =
+                  commentProfiles[
+                    child.user_id
+                  ];
+
+                const childName =
+                  getDisplayName(
+                    child.user_id,
+                  );
+
+                const parentName =
+                  getDisplayName(
+                    comment.user_id,
+                  );
+
+                return (
+                  <div
+                    key={child.id}
+                    className="rounded-2xl border border-border bg-card p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        {renderAvatar(
+                          childProfile,
+                          childName,
+                          "small",
+                        )}
+
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-foreground">
+                            {childName}
+                          </p>
+
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(
+                              child.created_at,
+                            ).toLocaleString(
+                              "id-ID",
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={
+                          deletingCommentId ===
+                          child.id
+                        }
+                        onClick={() =>
+                          void deleteComment(
+                            child,
+                          )
+                        }
+                        className="shrink-0 text-xs font-medium text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
+                      >
+                        {deletingCommentId ===
+                        child.id
+                          ? "Menghapus..."
+                          : "Hapus"}
+                      </button>
+                    </div>
+
+                    {/* LABEL REPLY */}
+
+                    {replyingTo?.id ===
+                      child.id && (
+                      <div className="mt-3 rounded-lg border-l-2 border-primary/40 bg-muted/40 px-3 py-2">
+                        <p className="text-xs text-muted-foreground">
+                          Membalas{" "}
+                          <span className="font-semibold text-foreground">
+                            @{parentName}
+                          </span>
+                        </p>
+                      </div>
+                    )}
+
+                    <p className="mt-3 whitespace-pre-line text-sm leading-6 text-foreground">
+                      {child.content}
+                    </p>
+
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-muted-foreground transition-colors hover:text-primary"
+                        onClick={() => {
+                          setReplyingTo(
+                            child,
+                          );
+                          setCommentText("");
+                        }}
+                      >
+                        Balas
+                      </button>
+                    </div>
+
+                    {renderReplyForm(
+                      child,
+                      childName,
+                    )}
+                  </div>
+                );
+              },
             )}
           </div>
         )}
@@ -1162,10 +1540,9 @@ export default function ReadChapterPage() {
     );
   }
 
-
-  // ===========================================================
+  // =========================================================
   // LOADING
-  // ===========================================================
+  // =========================================================
 
   if (loading) {
     return (
@@ -1182,9 +1559,9 @@ export default function ReadChapterPage() {
     );
   }
 
-  // ===========================================================
+  // =========================================================
   // ERROR
-  // ===========================================================
+  // =========================================================
 
   if (
     error ||
@@ -1216,9 +1593,30 @@ export default function ReadChapterPage() {
     );
   }
 
-  // ===========================================================
+  // =========================================================
+  // NAVIGATION HANDLERS
+  // =========================================================
+
+  function goToChapter(
+    targetChapter: Chapter,
+  ) {
+    /**
+     * Chapter berikutnya/sebelumnya harus selalu
+     * dimulai dari posisi paling atas.
+     */
+    restoreProgressRef.current =
+      false;
+
+    resetScrollToTop();
+
+    navigate(
+      `/read/${targetChapter.id}`,
+    );
+  }
+
+  // =========================================================
   // RENDER
-  // ===========================================================
+  // =========================================================
 
   return (
     <div className="min-h-screen pb-16">
@@ -1245,9 +1643,7 @@ export default function ReadChapterPage() {
             to={`/novel/${novel.id}`}
             className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-primary"
           >
-            <ArrowLeft
-              size={17}
-            />
+            <ArrowLeft size={17} />
 
             <span className="truncate">
               {novel.title}
@@ -1267,7 +1663,7 @@ export default function ReadChapterPage() {
 
       <main className="mx-auto max-w-3xl px-5 py-10 sm:px-8 sm:py-14">
         {/* ===================================================
-            CHAPTER HEADING
+            HEADING
         ==================================================== */}
 
         <header className="mb-10 text-center">
@@ -1283,8 +1679,7 @@ export default function ReadChapterPage() {
           <div className="mt-4 flex items-center justify-center gap-3 text-xs text-muted-foreground">
             <span>
               {Number(
-                chapter.word_count ??
-                  0,
+                chapter.word_count ?? 0,
               ).toLocaleString(
                 "id-ID",
               )}{" "}
@@ -1300,17 +1695,14 @@ export default function ReadChapterPage() {
         </header>
 
         {/* ===================================================
-            ISI CHAPTER
+            CHAPTER CONTENT
         ==================================================== */}
 
         <article className="font-serif text-base leading-8 text-foreground sm:text-lg sm:leading-9">
           {chapter.content
             .split(/\n\s*\n/)
             .map(
-              (
-                paragraph,
-                index,
-              ) => (
+              (paragraph, index) => (
                 <p
                   key={index}
                   className="mb-6 whitespace-pre-line"
@@ -1322,118 +1714,22 @@ export default function ReadChapterPage() {
         </article>
 
         {/* ===================================================
-            KOMENTAR CHAPTER
-        ==================================================== */}
-
-        <section className="mt-14 border-t border-border pt-8">
-          <div className="mb-6">
-            <h2 className="text-xl font-bold text-foreground">
-              Komentar
-            </h2>
-
-            <p className="mt-1 text-sm text-muted-foreground">
-              Bagikan pendapatmu tentang chapter ini.
-            </p>
-          </div>
-
-          {/* FORM KOMENTAR */}
-          <div className="rounded-2xl border border-border bg-card p-4">
-            <textarea
-              value={commentText}
-              onChange={(event) => {
-                setCommentText(
-                  event.target.value,
-                );
-              }}
-              placeholder={
-                replyingTo
-                  ? "Tulis balasan..."
-                  : "Tulis komentar..."
-              }
-              rows={4}
-              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-3 text-sm outline-none transition focus:border-primary"
-            />
-
-            <div className="mt-3 flex justify-end">
-              <Button
-                type="button"
-                onClick={() => {
-                  void submitComment();
-                }}
-                disabled={
-                  !commentText.trim()
-                }
-              >
-                {replyingTo
-                  ? "Kirim Balasan"
-                  : "Kirim Komentar"}
-              </Button>
-            </div>
-          </div>
-
-          {/* ERROR */}
-          {commentsError && (
-            <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-              {commentsError}
-            </div>
-          )}
-
-          {/* DAFTAR KOMENTAR */}
-          <div className="mt-6">
-            {commentsLoading ? (
-              <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-                <Loader2
-                  size={18}
-                  className="mr-2 animate-spin"
-                />
-
-                Memuat komentar...
-              </div>
-            ) : commentTree.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-                Belum ada komentar.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {commentTree.map(
-                  (comment) =>
-                    renderComment(comment),
-                )}
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* ===================================================
-            NAVIGASI CHAPTER
+            CHAPTER NAVIGATION
         ==================================================== */}
 
         <div className="mt-12 border-t border-border pt-6">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-center">
-            {/* SEBELUMNYA */}
+            {/* PREVIOUS */}
 
             <div className="flex justify-start">
               {previousChapter && (
                 <Button
                   variant="outline"
-                  onClick={() => {
-                    restoreProgressRef.current =
-                      false;
-
-                    setReadingProgress(0);
-
-                    latestProgressRef.current =
-                      0;
-
-                    window.scrollTo({
-                      top: 0,
-                      behavior: "auto",
-                    });
-
-                    navigate(
-                      `/read/${previousChapter.id}`,
-                    );
-                  }}
+                  onClick={() =>
+                    goToChapter(
+                      previousChapter,
+                    )
+                  }
                 >
                   <ChevronLeft
                     size={17}
@@ -1445,7 +1741,7 @@ export default function ReadChapterPage() {
               )}
             </div>
 
-            {/* DAFTAR CHAPTER */}
+            {/* CHAPTER LIST */}
 
             <div className="flex justify-center">
               <Button
@@ -1465,30 +1761,17 @@ export default function ReadChapterPage() {
               </Button>
             </div>
 
-            {/* BERIKUTNYA */}
+            {/* NEXT */}
 
             <div className="flex justify-end">
               {nextChapter && (
                 <Button
                   className="glow-primary-sm"
-                  onClick={() => {
-                    restoreProgressRef.current =
-                      false;
-
-                    setReadingProgress(0);
-
-                    latestProgressRef.current =
-                      0;
-
-                    window.scrollTo({
-                      top: 0,
-                      behavior: "auto",
-                    });
-
-                    navigate(
-                      `/read/${nextChapter.id}`,
-                    );
-                  }}
+                  onClick={() =>
+                    goToChapter(
+                      nextChapter,
+                    )
+                  }
                 >
                   Berikutnya
 
@@ -1503,7 +1786,122 @@ export default function ReadChapterPage() {
         </div>
 
         {/* ===================================================
-            CHAPTER TERAKHIR
+            COMMENTS
+        ==================================================== */}
+
+        <section className="mt-14 border-t border-border pt-8">
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-foreground">
+              Komentar
+            </h2>
+
+            <p className="mt-1 text-sm text-muted-foreground">
+              Bagikan pendapatmu
+              tentang chapter ini.
+            </p>
+          </div>
+
+          {/* COMMENT FORM */}
+
+          <div className="rounded-2xl border border-border bg-card p-4">
+            {replyingTo && (
+              <div className="mb-3 flex items-center justify-between rounded-lg border-l-2 border-primary/40 bg-muted/40 px-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  Membalas{" "}
+                  <span className="font-semibold text-foreground">
+                    @
+                    {getDisplayName(
+                      replyingTo.user_id,
+                    )}
+                  </span>
+                </p>
+
+                <button
+                  type="button"
+                  className="text-xs font-medium text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setReplyingTo(null);
+                    setCommentText("");
+                  }}
+                >
+                  Batal
+                </button>
+              </div>
+            )}
+
+            <textarea
+              value={commentText}
+              onChange={(event) =>
+                setCommentText(
+                  event.target.value,
+                )
+              }
+              placeholder={
+                replyingTo
+                  ? "Tulis balasan..."
+                  : "Tulis komentar..."
+              }
+              rows={4}
+              className="w-full resize-none rounded-xl border border-border bg-background px-3 py-3 text-sm outline-none transition focus:border-primary"
+            />
+
+            <div className="mt-3 flex justify-end">
+              <Button
+                type="button"
+                onClick={() =>
+                  void submitComment()
+                }
+                disabled={
+                  !commentText.trim()
+                }
+              >
+                {replyingTo
+                  ? "Kirim Balasan"
+                  : "Kirim Komentar"}
+              </Button>
+            </div>
+          </div>
+
+          {/* COMMENT ERROR */}
+
+          {commentsError && (
+            <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              {commentsError}
+            </div>
+          )}
+
+          {/* COMMENT LIST */}
+
+          <div className="mt-6">
+            {commentsLoading ? (
+              <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                <Loader2
+                  size={18}
+                  className="mr-2 animate-spin"
+                />
+
+                Memuat komentar...
+              </div>
+            ) : commentTree.length ===
+              0 ? (
+              <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                Belum ada komentar.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {commentTree.map(
+                  (comment) =>
+                    renderComment(
+                      comment,
+                    ),
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ===================================================
+            LAST CHAPTER
         ==================================================== */}
 
         {!nextChapter && (
@@ -1514,8 +1912,8 @@ export default function ReadChapterPage() {
             />
 
             <p className="mt-3 font-medium text-foreground">
-              Kamu sudah sampai di
-              chapter terbaru.
+              Kamu sudah sampai
+              di chapter terbaru.
             </p>
 
             <p className="mt-1 text-sm text-muted-foreground">

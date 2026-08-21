@@ -9,6 +9,9 @@ import {
   Loader2,
   MessageCircle,
   Search,
+  ShieldAlert,
+  ShieldCheck,
+  Trash2,
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
@@ -21,6 +24,7 @@ type Comment = {
   content: string;
   created_at: string | null;
   updated_at: string | null;
+  is_blocked: boolean;
 };
 
 type Profile = {
@@ -47,36 +51,29 @@ type CommentItem = Comment & {
 
 const PAGE_SIZE = 100;
 
+type CommentTab = 'active' | 'blocked';
+
 export default function AdminCommentsPage() {
-  const [comments, setComments] =
-    useState<CommentItem[]>([]);
+  const [comments, setComments] = useState<CommentItem[]>([]);
+  const [novels, setNovels] = useState<Novel[]>([]);
+  const [totalComments, setTotalComments] = useState(0);
 
-  const [novels, setNovels] =
-    useState<Novel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [selectedNovel, setSelectedNovel] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
 
-  const [totalComments, setTotalComments] =
-    useState(0);
+  const [activeTab, setActiveTab] =
+    useState<CommentTab>('active');
 
-  const [loading, setLoading] =
-    useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [search, setSearch] =
-    useState('');
-
-  const [selectedNovel, setSelectedNovel] =
-    useState('');
-
-  const [currentPage, setCurrentPage] =
-    useState(1);
-
-  const [error, setError] =
+  const [actionLoading, setActionLoading] =
     useState<string | null>(null);
 
   const totalPages = Math.max(
     1,
-    Math.ceil(
-      totalComments / PAGE_SIZE,
-    ),
+    Math.ceil(totalComments / PAGE_SIZE),
   );
 
   useEffect(() => {
@@ -84,11 +81,16 @@ export default function AdminCommentsPage() {
   }, []);
 
   useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab]);
+
+  useEffect(() => {
     fetchComments();
   }, [
     currentPage,
     search,
     selectedNovel,
+    activeTab,
   ]);
 
   async function fetchNovels() {
@@ -111,9 +113,7 @@ export default function AdminCommentsPage() {
       return;
     }
 
-    setNovels(
-      (data ?? []) as Novel[],
-    );
+    setNovels((data ?? []) as Novel[]);
   }
 
   async function fetchComments() {
@@ -121,8 +121,7 @@ export default function AdminCommentsPage() {
     setError(null);
 
     const from =
-      (currentPage - 1) *
-      PAGE_SIZE;
+      (currentPage - 1) * PAGE_SIZE;
 
     const to =
       from + PAGE_SIZE - 1;
@@ -137,11 +136,16 @@ export default function AdminCommentsPage() {
           chapter_id,
           content,
           created_at,
-          updated_at
+          updated_at,
+          is_blocked
         `,
         {
           count: 'exact',
         },
+      )
+      .eq(
+        'is_blocked',
+        activeTab === 'blocked',
       )
       .order('created_at', {
         ascending: false,
@@ -332,14 +336,17 @@ export default function AdminCommentsPage() {
       commentRows.map(
         (comment) => ({
           ...comment,
+
           profile:
             profileMap.get(
               comment.user_id,
             ) ?? null,
+
           novel:
             novelMap.get(
               comment.novel_id,
             ) ?? null,
+
           chapter:
             comment.chapter_id
               ? chapterMap.get(
@@ -352,6 +359,143 @@ export default function AdminCommentsPage() {
     setComments(result);
     setTotalComments(count ?? 0);
     setLoading(false);
+  }
+
+  async function handleBlockComment(
+    comment: CommentItem,
+  ) {
+    const action = comment.is_blocked
+      ? 'membuka blokir'
+      : 'memblokir';
+
+    const confirmed = window.confirm(
+      comment.is_blocked
+        ? 'Yakin ingin membuka blokir komentar ini? Komentar akan kembali dapat dilihat pengguna.'
+        : 'Yakin ingin memblokir komentar ini? Komentar tidak akan ditampilkan kepada pengguna.',
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setActionLoading(comment.id);
+
+    const {
+      error: updateError,
+    } = await supabase
+      .from('comments')
+      .update({
+        is_blocked: !comment.is_blocked,
+        updated_at:
+          new Date().toISOString(),
+      })
+      .eq('id', comment.id);
+
+    if (updateError) {
+      console.error(
+        `Gagal ${action} komentar:`,
+        updateError,
+      );
+
+      window.alert(
+        `Gagal ${action} komentar.`,
+      );
+
+      setActionLoading(null);
+
+      return;
+    }
+
+    /*
+     * Karena komentar sekarang sudah berpindah
+     * kategori, langsung hapus dari daftar saat ini.
+     * Contoh:
+     * Aktif -> Blokir -> hilang dari tab Aktif.
+     * Diblokir -> Buka Blokir -> hilang dari tab Diblokir.
+     */
+    setComments((currentComments) =>
+      currentComments.filter(
+        (item) =>
+          item.id !== comment.id,
+      ),
+    );
+
+    setTotalComments((total) =>
+      Math.max(0, total - 1),
+    );
+
+    setActionLoading(null);
+
+    /*
+     * Jika halaman menjadi kosong dan bukan
+     * halaman pertama, kembali satu halaman.
+     */
+    if (
+      comments.length === 1 &&
+      currentPage > 1
+    ) {
+      setCurrentPage((page) =>
+        Math.max(1, page - 1),
+      );
+    }
+  }
+
+  async function handleDeleteComment(
+    comment: CommentItem,
+  ) {
+    const confirmed = window.confirm(
+      'Yakin ingin menghapus komentar ini secara permanen? Tindakan ini tidak dapat dibatalkan.',
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setActionLoading(comment.id);
+
+    const {
+      error: deleteError,
+    } = await supabase
+      .from('comments')
+      .delete()
+      .eq('id', comment.id);
+
+    if (deleteError) {
+      console.error(
+        'Gagal menghapus komentar:',
+        deleteError,
+      );
+
+      window.alert(
+        'Gagal menghapus komentar.',
+      );
+
+      setActionLoading(null);
+
+      return;
+    }
+
+    setComments((currentComments) =>
+      currentComments.filter(
+        (item) =>
+          item.id !== comment.id,
+      ),
+    );
+
+    setTotalComments((total) =>
+      Math.max(0, total - 1),
+    );
+
+    setActionLoading(null);
+
+    if (
+      comments.length === 1 &&
+      currentPage > 1
+    ) {
+      setCurrentPage((page) =>
+        Math.max(1, page - 1),
+      );
+    }
   }
 
   function handleSearch(
@@ -368,20 +512,29 @@ export default function AdminCommentsPage() {
     setCurrentPage(1);
   }
 
+  function handleTabChange(
+    tab: CommentTab,
+  ) {
+    if (tab === activeTab) {
+      return;
+    }
+
+    setActiveTab(tab);
+    setCurrentPage(1);
+  }
+
   function goToPreviousPage() {
-    setCurrentPage(
-      (page) =>
-        Math.max(1, page - 1),
+    setCurrentPage((page) =>
+      Math.max(1, page - 1),
     );
   }
 
   function goToNextPage() {
-    setCurrentPage(
-      (page) =>
-        Math.min(
-          totalPages,
-          page + 1,
-        ),
+    setCurrentPage((page) =>
+      Math.min(
+        totalPages,
+        page + 1,
+      ),
     );
   }
 
@@ -420,6 +573,7 @@ export default function AdminCommentsPage() {
 
         {/* HEADER */}
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+
           <div>
             <Link
               to="/admin/dashboard"
@@ -430,6 +584,7 @@ export default function AdminCommentsPage() {
             </Link>
 
             <div className="flex items-center gap-3">
+
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-500/10">
                 <MessageCircle
                   size={24}
@@ -446,11 +601,16 @@ export default function AdminCommentsPage() {
                   Kelola seluruh komentar Novel Semesta.
                 </p>
               </div>
+
             </div>
           </div>
 
           <div className="text-sm text-muted-foreground">
-            Total:{' '}
+            Total{' '}
+            {activeTab === 'active'
+              ? 'aktif'
+              : 'diblokir'}
+            :{' '}
             <span className="font-semibold text-foreground">
               {totalComments.toLocaleString(
                 'id-ID',
@@ -458,6 +618,52 @@ export default function AdminCommentsPage() {
             </span>{' '}
             komentar
           </div>
+
+        </div>
+
+        {/* TAB */}
+        <div className="mb-6 rounded-xl border border-border bg-card p-1.5">
+
+          <div className="grid grid-cols-2 gap-1.5">
+
+            <button
+              type="button"
+              onClick={() =>
+                handleTabChange(
+                  'active',
+                )
+              }
+              className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-colors ${
+                activeTab === 'active'
+                  ? 'bg-emerald-500/10 text-emerald-400'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              }`}
+            >
+              <ShieldCheck size={17} />
+
+              Komentar Aktif
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                handleTabChange(
+                  'blocked',
+                )
+              }
+              className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-colors ${
+                activeTab === 'blocked'
+                  ? 'bg-red-500/10 text-red-400'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              }`}
+            >
+              <ShieldAlert size={17} />
+
+              Komentar Diblokir
+            </button>
+
+          </div>
+
         </div>
 
         {/* FILTER */}
@@ -465,6 +671,7 @@ export default function AdminCommentsPage() {
 
           {/* SEARCH */}
           <div className="relative">
+
             <Search
               size={18}
               className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground"
@@ -481,6 +688,7 @@ export default function AdminCommentsPage() {
               placeholder="Cari isi komentar..."
               className="w-full rounded-xl border border-border bg-card py-3 pl-11 pr-4 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/50"
             />
+
           </div>
 
           {/* NOVEL FILTER */}
@@ -497,15 +705,18 @@ export default function AdminCommentsPage() {
               Semua Novel
             </option>
 
-            {novels.map((novel) => (
-              <option
-                key={novel.id}
-                value={novel.id}
-              >
-                {novel.title}
-              </option>
-            ))}
+            {novels.map(
+              (novel) => (
+                <option
+                  key={novel.id}
+                  value={novel.id}
+                >
+                  {novel.title}
+                </option>
+              ),
+            )}
           </select>
+
         </div>
 
         {/* CONTENT */}
@@ -513,18 +724,26 @@ export default function AdminCommentsPage() {
 
           {loading ? (
             <div className="flex min-h-[300px] items-center justify-center">
+
               <div className="flex items-center gap-3 text-muted-foreground">
+
                 <Loader2
                   size={20}
                   className="animate-spin"
                 />
+
                 Memuat komentar...
+
               </div>
+
             </div>
 
           ) : error ? (
+
             <div className="flex min-h-[300px] items-center justify-center px-6 text-center">
+
               <div>
+
                 <p className="font-medium text-destructive">
                   {error}
                 </p>
@@ -538,32 +757,59 @@ export default function AdminCommentsPage() {
                 >
                   Coba Lagi
                 </button>
+
               </div>
+
             </div>
 
           ) : comments.length === 0 ? (
+
             <div className="flex min-h-[300px] items-center justify-center px-6 text-center">
+
               <div>
-                <MessageCircle
-                  size={40}
-                  className="mx-auto text-muted-foreground"
-                />
+
+                {activeTab ===
+                'blocked' ? (
+                  <ShieldCheck
+                    size={40}
+                    className="mx-auto text-emerald-400"
+                  />
+                ) : (
+                  <MessageCircle
+                    size={40}
+                    className="mx-auto text-muted-foreground"
+                  />
+                )}
 
                 <p className="mt-4 font-medium text-foreground">
-                  Tidak ada komentar ditemukan
+                  {activeTab ===
+                  'blocked'
+                    ? 'Tidak ada komentar yang diblokir'
+                    : 'Tidak ada komentar aktif'}
                 </p>
 
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Coba gunakan pencarian atau filter lain.
+                  {search ||
+                  selectedNovel
+                    ? 'Coba gunakan pencarian atau filter lain.'
+                    : activeTab ===
+                        'blocked'
+                      ? 'Semua komentar saat ini masih aktif.'
+                      : 'Belum ada komentar aktif.'}
                 </p>
+
               </div>
+
             </div>
 
           ) : (
+
             <>
+
               {/* DESKTOP */}
               <div className="hidden overflow-x-auto md:block">
-                <table className="w-full min-w-[900px]">
+
+                <table className="w-full min-w-[1100px]">
 
                   <thead>
                     <tr className="border-b border-border text-left">
@@ -588,38 +834,255 @@ export default function AdminCommentsPage() {
                         Dibuat
                       </th>
 
+                      <th className="px-5 py-4 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Aksi
+                      </th>
+
                     </tr>
                   </thead>
 
                   <tbody>
+
                     {comments.map(
-                      (comment) => (
-                        <tr
-                          key={comment.id}
-                          className="border-b border-border last:border-0 transition-colors hover:bg-muted/30"
-                        >
+                      (comment) => {
 
-                          <td className="max-w-[360px] px-5 py-4">
-                            <p className="line-clamp-3 text-sm text-foreground">
-                              {comment.content}
-                            </p>
+                        const isActionLoading =
+                          actionLoading ===
+                          comment.id;
 
-                            <p className="mt-1 truncate text-[10px] text-muted-foreground">
-                              {comment.id}
-                            </p>
-                          </td>
+                        return (
+                          <tr
+                            key={comment.id}
+                            className={`border-b border-border last:border-0 transition-colors ${
+                              comment.is_blocked
+                                ? 'bg-red-500/[0.04]'
+                                : 'hover:bg-muted/30'
+                            }`}
+                          >
 
-                          <td className="px-5 py-4">
-                            <div className="flex items-center gap-2">
-                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange-500/10">
-                                <MessageCircle
-                                  size={16}
-                                  className="text-orange-400"
-                                />
+                            {/* KOMENTAR */}
+                            <td className="max-w-[360px] px-5 py-4">
+
+                              <div className="mb-2">
+
+                                {comment.is_blocked ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-1 text-[10px] font-semibold text-red-400">
+                                    <ShieldAlert
+                                      size={11}
+                                    />
+                                    Diblokir
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-400">
+                                    <ShieldCheck
+                                      size={11}
+                                    />
+                                    Aktif
+                                  </span>
+                                )}
+
                               </div>
 
+                              <p
+                                className={`line-clamp-3 text-sm ${
+                                  comment.is_blocked
+                                    ? 'text-muted-foreground line-through'
+                                    : 'text-foreground'
+                                }`}
+                              >
+                                {comment.content}
+                              </p>
+
+                              <p className="mt-1 truncate text-[10px] text-muted-foreground">
+                                {comment.id}
+                              </p>
+
+                            </td>
+
+                            {/* PENGGUNA */}
+                            <td className="px-5 py-4">
+
+                              <div className="flex items-center gap-2">
+
+                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange-500/10">
+                                  <MessageCircle
+                                    size={16}
+                                    className="text-orange-400"
+                                  />
+                                </div>
+
+                                <div className="min-w-0">
+
+                                  <p className="truncate text-sm font-medium text-foreground">
+                                    {getUserName(
+                                      comment.profile,
+                                    )}
+                                  </p>
+
+                                  {comment.profile?.username && (
+                                    <p className="truncate text-xs text-muted-foreground">
+                                      @{comment.profile.username}
+                                    </p>
+                                  )}
+
+                                </div>
+
+                              </div>
+
+                            </td>
+
+                            {/* NOVEL */}
+                            <td className="px-5 py-4 text-sm text-muted-foreground">
+
+                              <div className="flex items-center gap-2">
+
+                                <BookOpen size={15} />
+
+                                <span className="max-w-[180px] truncate">
+                                  {comment.novel?.title ||
+                                    '-'}
+                                </span>
+
+                              </div>
+
+                            </td>
+
+                            {/* CHAPTER */}
+                            <td className="px-5 py-4 text-sm text-muted-foreground">
+
+                              <div className="flex items-center gap-2">
+
+                                <FileText size={15} />
+
+                                <span className="max-w-[180px] truncate">
+                                  {comment.chapter?.title ||
+                                    'Komentar novel'}
+                                </span>
+
+                              </div>
+
+                            </td>
+
+                            {/* TANGGAL */}
+                            <td className="whitespace-nowrap px-5 py-4 text-sm text-muted-foreground">
+                              {formatDate(
+                                comment.created_at,
+                              )}
+                            </td>
+
+                            {/* AKSI */}
+                            <td className="px-5 py-4">
+
+                              <div className="flex items-center justify-end gap-2">
+
+                                <button
+                                  type="button"
+                                  disabled={
+                                    isActionLoading
+                                  }
+                                  onClick={() =>
+                                    handleBlockComment(
+                                      comment,
+                                    )
+                                  }
+                                  title={
+                                    comment.is_blocked
+                                      ? 'Buka blokir'
+                                      : 'Blokir komentar'
+                                  }
+                                  className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                                    comment.is_blocked
+                                      ? 'border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10'
+                                      : 'border-orange-500/20 text-orange-400 hover:bg-orange-500/10'
+                                  }`}
+                                >
+
+                                  {isActionLoading ? (
+                                    <Loader2
+                                      size={15}
+                                      className="animate-spin"
+                                    />
+                                  ) : comment.is_blocked ? (
+                                    <ShieldCheck
+                                      size={15}
+                                    />
+                                  ) : (
+                                    <ShieldAlert
+                                      size={15}
+                                    />
+                                  )}
+
+                                </button>
+
+                                <button
+                                  type="button"
+                                  disabled={
+                                    isActionLoading
+                                  }
+                                  onClick={() =>
+                                    handleDeleteComment(
+                                      comment,
+                                    )
+                                  }
+                                  title="Hapus komentar"
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-500/20 text-red-400 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  <Trash2
+                                    size={15}
+                                  />
+                                </button>
+
+                              </div>
+
+                            </td>
+
+                          </tr>
+                        );
+                      },
+                    )}
+
+                  </tbody>
+
+                </table>
+
+              </div>
+
+              {/* MOBILE */}
+              <div className="divide-y divide-border md:hidden">
+
+                {comments.map(
+                  (comment) => {
+
+                    const isActionLoading =
+                      actionLoading ===
+                      comment.id;
+
+                    return (
+                      <div
+                        key={comment.id}
+                        className={`p-4 ${
+                          comment.is_blocked
+                            ? 'bg-red-500/[0.04]'
+                            : ''
+                        }`}
+                      >
+
+                        <div className="flex gap-3">
+
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-500/10">
+                            <MessageCircle
+                              size={18}
+                              className="text-orange-400"
+                            />
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+
+                            <div className="flex items-start justify-between gap-2">
+
                               <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-foreground">
+
+                                <p className="truncate text-sm font-semibold text-foreground">
                                   {getUserName(
                                     comment.profile,
                                   )}
@@ -630,118 +1093,151 @@ export default function AdminCommentsPage() {
                                     @{comment.profile.username}
                                   </p>
                                 )}
+
                               </div>
-                            </div>
-                          </td>
 
-                          <td className="px-5 py-4 text-sm text-muted-foreground">
-                            <div className="flex items-center gap-2">
-                              <BookOpen
-                                size={15}
-                              />
-
-                              <span className="max-w-[180px] truncate">
-                                {comment.novel?.title ||
-                                  '-'}
+                              <span className="shrink-0 text-[10px] text-muted-foreground">
+                                {formatDate(
+                                  comment.created_at,
+                                )}
                               </span>
+
                             </div>
-                          </td>
 
-                          <td className="px-5 py-4 text-sm text-muted-foreground">
-                            <div className="flex items-center gap-2">
-                              <FileText
-                                size={15}
-                              />
+                            {/* STATUS */}
+                            <div className="mt-2">
 
-                              <span className="max-w-[180px] truncate">
-                                {comment.chapter?.title ||
-                                  'Komentar novel'}
-                              </span>
-                            </div>
-                          </td>
-
-                          <td className="whitespace-nowrap px-5 py-4 text-sm text-muted-foreground">
-                            {formatDate(
-                              comment.created_at,
-                            )}
-                          </td>
-
-                        </tr>
-                      ),
-                    )}
-                  </tbody>
-
-                </table>
-              </div>
-
-              {/* MOBILE */}
-              <div className="divide-y divide-border md:hidden">
-
-                {comments.map(
-                  (comment) => (
-                    <div
-                      key={comment.id}
-                      className="p-4"
-                    >
-                      <div className="flex gap-3">
-
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-500/10">
-                          <MessageCircle
-                            size={18}
-                            className="text-orange-400"
-                          />
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="truncate text-sm font-semibold text-foreground">
-                              {getUserName(
-                                comment.profile,
+                              {comment.is_blocked ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-1 text-[10px] font-semibold text-red-400">
+                                  <ShieldAlert
+                                    size={11}
+                                  />
+                                  Diblokir
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-400">
+                                  <ShieldCheck
+                                    size={11}
+                                  />
+                                  Aktif
+                                </span>
                               )}
+
+                            </div>
+
+                            {/* CONTENT */}
+                            <p
+                              className={`mt-2 text-sm leading-relaxed ${
+                                comment.is_blocked
+                                  ? 'text-muted-foreground line-through'
+                                  : 'text-foreground'
+                              }`}
+                            >
+                              {comment.content}
                             </p>
 
-                            <span className="shrink-0 text-[10px] text-muted-foreground">
-                              {formatDate(
-                                comment.created_at,
-                              )}
-                            </span>
-                          </div>
+                            {/* NOVEL & CHAPTER */}
+                            <div className="mt-3 space-y-1.5">
 
-                          <p className="mt-2 text-sm leading-relaxed text-foreground">
-                            {comment.content}
-                          </p>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
 
-                          <div className="mt-3 space-y-1.5">
+                                <BookOpen
+                                  size={13}
+                                />
 
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <BookOpen
-                                size={13}
-                              />
+                                <span className="truncate">
+                                  {comment.novel?.title ||
+                                    '-'}
+                                </span>
 
-                              <span className="truncate">
-                                {comment.novel?.title ||
-                                  '-'}
-                              </span>
+                              </div>
+
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+
+                                <FileText
+                                  size={13}
+                                />
+
+                                <span className="truncate">
+                                  {comment.chapter?.title ||
+                                    'Komentar novel'}
+                                </span>
+
+                              </div>
+
                             </div>
 
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <FileText
-                                size={13}
-                              />
+                            {/* ACTIONS */}
+                            <div className="mt-4 flex gap-2">
 
-                              <span className="truncate">
-                                {comment.chapter?.title ||
-                                  'Komentar novel'}
-                              </span>
+                              <button
+                                type="button"
+                                disabled={
+                                  isActionLoading
+                                }
+                                onClick={() =>
+                                  handleBlockComment(
+                                    comment,
+                                  )
+                                }
+                                className={`inline-flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                                  comment.is_blocked
+                                    ? 'border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10'
+                                    : 'border-orange-500/20 text-orange-400 hover:bg-orange-500/10'
+                                }`}
+                              >
+
+                                {isActionLoading ? (
+                                  <Loader2
+                                    size={14}
+                                    className="animate-spin"
+                                  />
+                                ) : comment.is_blocked ? (
+                                  <ShieldCheck
+                                    size={14}
+                                  />
+                                ) : (
+                                  <ShieldAlert
+                                    size={14}
+                                  />
+                                )}
+
+                                {comment.is_blocked
+                                  ? 'Buka Blokir'
+                                  : 'Blokir'}
+
+                              </button>
+
+                              <button
+                                type="button"
+                                disabled={
+                                  isActionLoading
+                                }
+                                onClick={() =>
+                                  handleDeleteComment(
+                                    comment,
+                                  )
+                                }
+                                className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-500/20 px-4 py-2 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+
+                                <Trash2
+                                  size={14}
+                                />
+
+                                Hapus
+
+                              </button>
+
                             </div>
 
                           </div>
 
                         </div>
+
                       </div>
-                    </div>
-                  ),
+                    );
+                  },
                 )}
 
               </div>
@@ -750,17 +1246,24 @@ export default function AdminCommentsPage() {
               <div className="flex flex-col gap-3 border-t border-border px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
 
                 <p className="text-xs text-muted-foreground">
+
                   Menampilkan{' '}
+
                   <span className="font-medium text-foreground">
-                    {(
-                      (currentPage - 1) *
-                        PAGE_SIZE +
-                      1
-                    ).toLocaleString(
-                      'id-ID',
-                    )}
+                    {totalComments === 0
+                      ? 0
+                      : (
+                          (currentPage -
+                            1) *
+                            PAGE_SIZE +
+                          1
+                        ).toLocaleString(
+                          'id-ID',
+                        )}
                   </span>
+
                   {' - '}
+
                   <span className="font-medium text-foreground">
                     {Math.min(
                       currentPage *
@@ -770,13 +1273,17 @@ export default function AdminCommentsPage() {
                       'id-ID',
                     )}
                   </span>
+
                   {' dari '}
+
                   <span className="font-medium text-foreground">
                     {totalComments.toLocaleString(
                       'id-ID',
                     )}
                   </span>
+
                   {' komentar'}
+
                 </p>
 
                 <div className="flex items-center justify-between gap-2 sm:justify-end">
@@ -794,7 +1301,9 @@ export default function AdminCommentsPage() {
                     <ChevronLeft
                       size={15}
                     />
+
                     Sebelumnya
+
                   </button>
 
                   <div className="flex h-9 min-w-9 items-center justify-center rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground">
@@ -813,18 +1322,23 @@ export default function AdminCommentsPage() {
                     className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Berikutnya
+
                     <ChevronRight
                       size={15}
                     />
+
                   </button>
 
                 </div>
 
               </div>
+
             </>
+
           )}
 
         </section>
+
       </div>
     </main>
   );
